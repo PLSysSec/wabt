@@ -1,7 +1,7 @@
 
 #define TRAP(x) (wasm_rt_trap(WASM_RT_TRAP_##x), 0)
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
+#if !WASM_RT_USE_STACK_DEPTH_COUNT
 #define FUNC_PROLOGUE
 
 #define FUNC_EPILOGUE

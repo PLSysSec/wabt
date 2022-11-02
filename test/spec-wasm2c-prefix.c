@@ -9,8 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wasm-rt.h"
 #include "wasm-rt-impl.h"
+#include "wasm-rt.h"
 
 static int g_tests_run;
 static int g_tests_passed;
@@ -28,10 +28,11 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_EXCEPTION(f)                                               \
   do {                                                                    \
     g_tests_run++;                                                        \
-    if (wasm_rt_impl_try() == WASM_RT_TRAP_UNCAUGHT_EXCEPTION) {          \
+    wasm_rt_trap_t code;                                                  \
+    wasm_rt_impl_try(&code, f);                                           \
+    if (code == WASM_RT_TRAP_UNCAUGHT_EXCEPTION) {                        \
       g_tests_passed++;                                                   \
     } else {                                                              \
-      (void)(f);                                                          \
       error(__FILE__, __LINE__, "expected " #f " to throw exception.\n"); \
     }                                                                     \
   } while (0)
@@ -39,10 +40,11 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_TRAP(f)                                         \
   do {                                                         \
     g_tests_run++;                                             \
-    if (wasm_rt_impl_try() != 0) {                             \
+    wasm_rt_trap_t code;                                       \
+    wasm_rt_impl_try(&code, f);                                \
+    if (code != 0) {                                           \
       g_tests_passed++;                                        \
     } else {                                                   \
-      (void)(f);                                               \
       error(__FILE__, __LINE__, "expected " #f " to trap.\n"); \
     }                                                          \
   } while (0)
@@ -50,10 +52,10 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_EXHAUSTION(f)                                     \
   do {                                                           \
     g_tests_run++;                                               \
-    wasm_rt_trap_t code = wasm_rt_impl_try();                    \
+    wasm_rt_trap_t code;                                         \
+    wasm_rt_impl_try(&code, f);                                  \
     switch (code) {                                              \
       case WASM_RT_TRAP_NONE:                                    \
-        (void)(f);                                               \
         error(__FILE__, __LINE__, "expected " #f " to trap.\n"); \
         break;                                                   \
       case WASM_RT_TRAP_EXHAUSTION:                              \
@@ -71,12 +73,12 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_RETURN(f)                               \
   do {                                                 \
     g_tests_run++;                                     \
-    int trap_code = wasm_rt_impl_try();                \
-    if (trap_code) {                                   \
+    wasm_rt_trap_t code;                               \
+    wasm_rt_impl_try(&code, f);                        \
+    if (code) {                                        \
       error(__FILE__, __LINE__, #f " trapped (%s).\n", \
-            wasm_rt_strerror(trap_code));              \
+            wasm_rt_strerror(code));                   \
     } else {                                           \
-      f;                                               \
       g_tests_passed++;                                \
     }                                                  \
   } while (0)
@@ -84,12 +86,13 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_RETURN_T(type, fmt, f, expected)                          \
   do {                                                                   \
     g_tests_run++;                                                       \
-    int trap_code = wasm_rt_impl_try();                                  \
-    if (trap_code) {                                                     \
+    wasm_rt_trap_t code;                                                 \
+    type actual;                                                         \
+    wasm_rt_impl_try(&code, actual = f);                                 \
+    if (code) {                                                          \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                   \
-            wasm_rt_strerror(trap_code));                                \
+            wasm_rt_strerror(code));                                     \
     } else {                                                             \
-      type actual = f;                                                   \
       if (is_equal_##type(actual, expected)) {                           \
         g_tests_passed++;                                                \
       } else {                                                           \
@@ -103,12 +106,13 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_RETURN_FUNCREF(f, expected)                                \
   do {                                                                    \
     g_tests_run++;                                                        \
-    int trap_code = wasm_rt_impl_try();                                   \
-    if (trap_code) {                                                      \
+    wasm_rt_trap_t code;                                                  \
+    wasm_rt_funcref_t actual;                                             \
+    wasm_rt_impl_try(&code, actual = f);                                  \
+    if (code) {                                                           \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                    \
-            wasm_rt_strerror(trap_code));                                 \
+            wasm_rt_strerror(code));                                      \
     } else {                                                              \
-      wasm_rt_funcref_t actual = f;                                       \
       if (is_equal_wasm_rt_funcref_t(actual, expected)) {                 \
         g_tests_passed++;                                                 \
       } else {                                                            \
@@ -121,10 +125,12 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_RETURN_NAN_T(type, itype, fmt, f, kind)                        \
   do {                                                                        \
     g_tests_run++;                                                            \
-    if (wasm_rt_impl_try() != 0) {                                            \
+    wasm_rt_trap_t code;                                                      \
+    type actual;                                                              \
+    wasm_rt_impl_try(&code, actual = f);                                      \
+    if (code != 0) {                                                          \
       error(__FILE__, __LINE__, #f " trapped.\n");                            \
     } else {                                                                  \
-      type actual = f;                                                        \
       itype iactual;                                                          \
       memcpy(&iactual, &actual, sizeof(iactual));                             \
       if (is_##kind##_nan_##type(iactual)) {                                  \
@@ -144,23 +150,24 @@ static void error(const char* file, int line, const char* format, ...) {
 #define MULTI_i64 "%" PRIu64
 #define MULTI_f32 "%.9g"
 #define MULTI_f64 "%.17g"
-#define ASSERT_RETURN_MULTI_T(type, fmt, f, compare, expected, found)    \
-  do {                                                                   \
-    g_tests_run++;                                                       \
-    if (wasm_rt_impl_try() != 0) {                                       \
-      error(__FILE__, __LINE__, #f " trapped.\n");                       \
-    } else {                                                             \
-      type actual = f;                                                   \
-      if (compare) {                                                     \
-        g_tests_passed++;                                                \
-      } else {                                                           \
-        error(__FILE__, __LINE__,                                        \
-              "in " #f ": expected " fmt ", got " fmt ".\n",             \
-              MULTI_T_UNPACK(expected), MULTI_T_UNPACK(found));          \
-      }                                                                  \
-    }                                                                    \
+#define ASSERT_RETURN_MULTI_T(type, fmt, f, compare, expected, found) \
+  do {                                                                \
+    g_tests_run++;                                                    \
+    wasm_rt_trap_t code;                                              \
+    type actual;                                                      \
+    wasm_rt_impl_try(&code, actual = f);                              \
+    if (code != 0) {                                                  \
+      error(__FILE__, __LINE__, #f " trapped.\n");                    \
+    } else {                                                          \
+      if (compare) {                                                  \
+        g_tests_passed++;                                             \
+      } else {                                                        \
+        error(__FILE__, __LINE__,                                     \
+              "in " #f ": expected " fmt ", got " fmt ".\n",          \
+              MULTI_T_UNPACK(expected), MULTI_T_UNPACK(found));       \
+      }                                                               \
+    }                                                                 \
   } while (0)
-
 
 #define ASSERT_RETURN_I32(f, expected) ASSERT_RETURN_T(u32, "u", f, expected)
 #define ASSERT_RETURN_I64(f, expected) ASSERT_RETURN_T(u64, PRIu64, f, expected)
