@@ -44,10 +44,6 @@ extern "C" {
 #define wasm_rt_memcpy memcpy
 #endif
 
-#ifndef WASM_RT_SKIP_SIGNAL_RECOVERY
-#define WASM_RT_SKIP_SIGNAL_RECOVERY 0
-#endif
-
 /**
  * Enable memory checking via a signal handler via the following definition:
  *
@@ -56,30 +52,30 @@ extern "C" {
  * This is usually 10%-25% faster, but requires OS-specific support.
  */
 
-/** Check whether the signal handler is supported at all. */
-#if (defined(__linux__) || defined(__unix__) || defined(__APPLE__)) && \
-    defined(__WORDSIZE) && __WORDSIZE == 64
-
 /* If the signal handler is supported, then use it by default. */
 #ifndef WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #define WASM_RT_MEMCHECK_SIGNAL_HANDLER 1
 #endif
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
-#define WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX 1
+#ifndef WASM_RT_SKIP_SIGNAL_RECOVERY
+#define WASM_RT_SKIP_SIGNAL_RECOVERY 0
 #endif
 
+/** Check whether the signal handler is supported at all. */
+#if (defined(__linux__) || defined(__unix__) || defined(__APPLE__)) && \
+    defined(__WORDSIZE) && __WORDSIZE == 64
+#define WASM_RT_SIGNAL_RECOVERY_SUPPORTED 1
 #else
+#define WASM_RT_SIGNAL_RECOVERY_SUPPORTED 0
+#endif
 
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && (!WASM_RT_SKIP_SIGNAL_RECOVERY && !WASM_RT_SIGNAL_RECOVERY_SUPPORTED)
 /* The signal handler is not supported, error out if the user was trying to
  * enable it. */
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #error "Signal handler is not supported for this OS/Architecture!"
 #endif
 
-#define WASM_RT_MEMCHECK_SIGNAL_HANDLER 0
-#define WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX 0
-
+#if !WASM_RT_MEMCHECK_SIGNAL_HANDLER
 /**
  * When the signal handler is not used, stack depth is limited explicitly.
  * The maximum stack depth before trapping can be configured by defining
@@ -105,7 +101,7 @@ extern uint32_t wasm_rt_call_stack_depth;
 #define WASM_RT_NO_RETURN __attribute__((noreturn))
 #endif
 
-#if defined(__APPLE__) && WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if defined(__APPLE__) && WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #define WASM_RT_MERGED_OOB_AND_EXHAUSTION_TRAPS 1
 #else
 #define WASM_RT_MERGED_OOB_AND_EXHAUSTION_TRAPS 0
@@ -291,7 +287,7 @@ uint32_t wasm_rt_exception_size(void);
  */
 void* wasm_rt_exception(void);
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #define WASM_RT_SETJMP(buf) sigsetjmp(buf, 1)
 #else
 #define WASM_RT_SETJMP(buf) setjmp(buf)

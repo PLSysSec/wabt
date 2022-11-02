@@ -26,7 +26,7 @@ extern "C" {
 /** A setjmp buffer used for handling traps. */
 extern jmp_buf wasm_rt_jmp_buf;
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #define WASM_RT_LONGJMP(buf, val) siglongjmp(buf, val)
 #else
 #define WASM_RT_LONGJMP(buf, val) longjmp(buf, val)
@@ -50,7 +50,7 @@ extern uint32_t wasm_rt_saved_call_stack_depth;
  *   my_wasm_func();
  * ```
  */
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
 #define wasm_rt_impl_try() \
   (wasm_rt_set_unwind_target(&wasm_rt_jmp_buf), WASM_RT_SETJMP(wasm_rt_jmp_buf))
 #else

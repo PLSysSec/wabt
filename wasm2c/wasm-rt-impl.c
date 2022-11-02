@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
 #include <signal.h>
 #include <unistd.h>
 #endif
@@ -163,7 +163,7 @@ void* wasm_rt_exception(void) {
   return g_active_exception;
 }
 
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
 static void signal_handler(int sig, siginfo_t* si, void* unused) {
   if (si->si_code == SEGV_ACCERR) {
     wasm_rt_trap(WASM_RT_TRAP_OOB);
@@ -230,7 +230,7 @@ static void os_print_last_error(const char* msg) {
 #endif
 
 void wasm_rt_init(void) {
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
   if (!g_signal_handler_installed) {
     g_signal_handler_installed = true;
 
@@ -266,7 +266,7 @@ void wasm_rt_init(void) {
 }
 
 bool wasm_rt_is_initialized(void) {
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
   return g_signal_handler_installed;
 #else
   return true;
@@ -274,7 +274,7 @@ bool wasm_rt_is_initialized(void) {
 }
 
 void wasm_rt_free(void) {
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
   free(g_alt_stack);
 #endif
 }
@@ -283,7 +283,7 @@ void wasm_rt_allocate_memory(wasm_rt_memory_t* memory,
                              uint32_t initial_pages,
                              uint32_t max_pages) {
   uint32_t byte_length = initial_pages * PAGE_SIZE;
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
   /* Reserve 8GiB. */
   void* addr = os_mmap(0x200000000ul);
 
@@ -317,7 +317,7 @@ uint32_t wasm_rt_grow_memory(wasm_rt_memory_t* memory, uint32_t delta) {
   uint32_t old_size = old_pages * PAGE_SIZE;
   uint32_t new_size = new_pages * PAGE_SIZE;
   uint32_t delta_size = delta * PAGE_SIZE;
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
   uint8_t* new_data = memory->data;
   int ret = os_mprotect(new_data + old_size, delta_size);
   if (ret != 0) {
@@ -343,7 +343,7 @@ uint32_t wasm_rt_grow_memory(wasm_rt_memory_t* memory, uint32_t delta) {
 }
 
 void wasm_rt_free_memory(wasm_rt_memory_t* memory) {
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+#if WASM_RT_MEMCHECK_SIGNAL_HANDLER
   os_munmap(memory->data, memory->size);  // ignore error?
 #else
   free(memory->data);
