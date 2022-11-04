@@ -211,27 +211,24 @@ static void os_print_last_error(const char* msg) {
 
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER && !WASM_RT_SKIP_SIGNAL_RECOVERY
 
-static DWORD wasm_rt_os_win_exception_code;
+static void* os_sig_handle = 0;
 
-DWORD wasm_rt_os_win_exception_filter(DWORD code) {
-  wasm_rt_os_win_exception_code = code;
-  if (wasm_rt_os_win_exception_code == EXCEPTION_STACK_OVERFLOW ||
-      wasm_rt_os_win_exception_code == EXCEPTION_ACCESS_VIOLATION) {
-    return EXCEPTION_EXECUTE_HANDLER;
+static LONG os_signal_handler(PEXCEPTION_POINTERS pExceptionInfo) {
+  if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+    wasm_rt_trap(WASM_RT_TRAP_OOB);
+  } else if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
+    wasm_rt_trap(WASM_RT_TRAP_EXHAUSTION);
   }
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
-void wasm_rt_os_win_signal_handler(void) {
-  if (wasm_rt_os_win_exception_code == EXCEPTION_STACK_OVERFLOW) {
-    wasm_rt_trap(WASM_RT_TRAP_EXHAUSTION);
-  } else {
-    wasm_rt_trap(WASM_RT_TRAP_OOB);
-  }
+static void os_install_signal_handler(void) {
+  os_sig_handle = AddVectoredExceptionHandler(1 /* CALL_FIRST */, os_signal_handler);
 }
 
-static void os_install_signal_handler(void) {}
-static void os_cleanup_signal_handler(void) {}
+static void os_cleanup_signal_handler(void) {
+  RemoveVectoredExceptionHandler(os_sig_handle);
+}
 
 #endif
 

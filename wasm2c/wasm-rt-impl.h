@@ -53,43 +53,20 @@ extern uint32_t wasm_rt_saved_call_stack_depth;
  * jump back and return the trap that occurred.
  *
  * ```
- *   // Call the potentially-trapping function.
- *   wasm_rt_trap_t code;
- *   wasm_rt_impl_try(&code, my_wasm_func());
+ *   wasm_rt_trap_t code = wasm_rt_impl_try();
  *   if (code != 0) {
  *     printf("A trap occurred with code: %d\n", code);
  *     ...
  *   }
+ *
+ *   // Call the potentially-trapping function.
+ *   my_wasm_func();
  * ```
  */
-#if WASM_RT_MEMCHECK_SIGNAL_HANDLER && defined(_WIN32)
-
-DWORD wasm_rt_os_win_exception_filter(DWORD code);
-void wasm_rt_os_win_signal_handler(void);
-
-#define wasm_rt_impl_try(p_code, ...)                                  \
-  WASM_RT_SAVE_STACK_DEPTH();                                          \
-  wasm_rt_set_unwind_target(&wasm_rt_jmp_buf);                         \
-  *p_code = WASM_RT_SETJMP(wasm_rt_jmp_buf);                           \
-  if (!*p_code) {                                                      \
-    __try {                                                            \
-      __VA_ARGS__;                                                     \
-    } __except (wasm_rt_os_win_exception_filter(GetExceptionCode())) { \
-      wasm_rt_os_win_signal_handler();                                 \
-    }                                                                  \
-  }
-
-#else
-
-#define wasm_rt_impl_try(p_code, ...)          \
-  WASM_RT_SAVE_STACK_DEPTH();                  \
-  wasm_rt_set_unwind_target(&wasm_rt_jmp_buf); \
-  *p_code = WASM_RT_SETJMP(wasm_rt_jmp_buf);   \
-  if (!*p_code) {                              \
-    __VA_ARGS__;                               \
-  }
-
-#endif
+#define wasm_rt_impl_try()                      \
+  (WASM_RT_SAVE_STACK_DEPTH(),                  \
+   wasm_rt_set_unwind_target(&wasm_rt_jmp_buf), \
+   WASM_RT_SETJMP(wasm_rt_jmp_buf))
 
 #ifdef __cplusplus
 }
