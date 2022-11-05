@@ -249,6 +249,7 @@ class CWriter(object):
     def _WriteModuleCleanUps(self):
         for idx in range(self.module_idx):
             self.out_file.write("%s_free(&%s_instance);\n" % (self.GetModulePrefix(idx), self.GetModulePrefix(idx)))
+            self.out_file.write("%s_free_module();\n" % (self.GetModulePrefix(idx)))
 
     def _WriteAssertUninstantiableCommand(self, command):
         self.module_idx += 1
