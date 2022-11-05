@@ -30,12 +30,12 @@ typedef struct Z_fac_instance_t {
 } Z_fac_instance_t;
 
 void Z_fac_init_module(void);
-void Z_fac_instantiate(Z_fac_instance_t*);
+void Z_fac_instantiate(wasm_rt_thread_state* thread_state, Z_fac_instance_t*);
 void Z_fac_free_module(void);
 void Z_fac_free(Z_fac_instance_t*);
 
 /* export: 'fac' */
-u32 Z_facZ_fac(Z_fac_instance_t*, u32);
+u32 Z_facZ_fac(wasm_rt_thread_state* thread_state, Z_fac_instance_t*, u32);
 
 #ifdef __cplusplus
 }

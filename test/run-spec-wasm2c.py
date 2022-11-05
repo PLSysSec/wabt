@@ -129,7 +129,8 @@ class CWriter(object):
     def Write(self):
         self._WriteIncludes()
         self.out_file.write(self.prefix)
-        self.out_file.write("\nvoid run_spec_tests(void) {\n\n")
+        self.out_file.write("\nvoid run_spec_tests(void) {\n")
+        self.out_file.write('wasm_rt_thread_state* thread_state = wasm_rt_thread_init();\n\n')
         for command in self.commands:
             self._WriteCommand(command)
         self._WriteModuleCleanUps()
@@ -191,9 +192,9 @@ class CWriter(object):
                     imported_modules.add(import_module_name)
 
         if uninstantiable:
-            self.out_file.write('ASSERT_TRAP(')
+            self.out_file.write('ASSERT_TRAP(thread_state, ')
 
-        self.out_file.write('%s_instantiate(&%s_instance' % (self.GetModulePrefix(), self.GetModulePrefix()))
+        self.out_file.write('%s_instantiate(thread_state, &%s_instance' % (self.GetModulePrefix(), self.GetModulePrefix()))
         for imported_module in sorted(imported_modules):
             self.out_file.write(', &%s_instance' % imported_module)
         self.out_file.write(')')
@@ -271,14 +272,14 @@ class CWriter(object):
                     'f64': 'ASSERT_RETURN_CANONICAL_NAN_F64',
                 }
                 assert_macro = assert_map[(type_)]
-                self.out_file.write('%s(%s);\n' % (assert_macro, self._Action(command)))
+                self.out_file.write('%s(thread_state, %s);\n' % (assert_macro, self._Action(command)))
             elif value == 'nan:arithmetic':
                 assert_map = {
                     'f32': 'ASSERT_RETURN_ARITHMETIC_NAN_F32',
                     'f64': 'ASSERT_RETURN_ARITHMETIC_NAN_F64',
                 }
                 assert_macro = assert_map[(type_)]
-                self.out_file.write('%s(%s);\n' % (assert_macro, self._Action(command)))
+                self.out_file.write('%s(thread_state, %s);\n' % (assert_macro, self._Action(command)))
             else:
                 assert_map = {
                     'i32': 'ASSERT_RETURN_I32',
@@ -290,7 +291,7 @@ class CWriter(object):
                 }
 
                 assert_macro = assert_map[type_]
-                self.out_file.write('%s(%s, %s);\n' %
+                self.out_file.write('%s(thread_state, %s, %s);\n' %
                                     (assert_macro,
                                      self._Action(command),
                                      self._ConstantList(expected)))
@@ -299,7 +300,7 @@ class CWriter(object):
         else:
             result_types = [result['type'] for result in expected]
             # type, fmt, f, compare, expected, found
-            self.out_file.write('ASSERT_RETURN_MULTI_T(%s, %s, %s, %s, (%s), (%s));\n' %
+            self.out_file.write('ASSERT_RETURN_MULTI_T(thread_state, %s, %s, %s, %s, (%s), (%s));\n' %
                                 ("struct wasm_multi_" + MangleTypes(result_types),
                                  " ".join("MULTI_" + ty for ty in result_types),
                                  self._Action(command),
@@ -316,7 +317,7 @@ class CWriter(object):
         }
 
         assert_macro = assert_map[command['type']]
-        self.out_file.write('%s(%s);\n' % (assert_macro, self._Action(command)))
+        self.out_file.write('%s(thread_state, %s);\n' % (assert_macro, self._Action(command)))
 
     def _Constant(self, const):
         type_ = const['type']
@@ -369,9 +370,9 @@ class CWriter(object):
         if type_ == 'invoke':
             args = self._ConstantList(action.get('args', []))
             if len(args) == 0:
-                args = f'&{mangled_module_name}_instance'
+                args = f'thread_state, &{mangled_module_name}_instance'
             else:
-                args = f'&{mangled_module_name}_instance, {args}'
+                args = f'thread_state, &{mangled_module_name}_instance, {args}'
             return '%s(%s)' % (field, args)
         elif type_ == 'get':
             return '*%s(%s)' % (field, '&' + mangled_module_name + '_instance')

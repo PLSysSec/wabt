@@ -40,7 +40,8 @@ extern uint32_t wasm_rt_saved_call_stack_depth;
  * jump back and return the trap that occurred.
  *
  * ```
- *   wasm_rt_trap_t code = wasm_rt_impl_try();
+ *   wasm_rt_thread_state* thread_state = wasm_rt_thread_init();
+ *   wasm_rt_trap_t code = wasm_rt_impl_try(thread_state);
  *   if (code != 0) {
  *     printf("A trap occurred with code: %d\n", code);
  *     ...
@@ -51,12 +52,12 @@ extern uint32_t wasm_rt_saved_call_stack_depth;
  * ```
  */
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
-#define wasm_rt_impl_try() \
-  (wasm_rt_set_unwind_target(&wasm_rt_jmp_buf), WASM_RT_SETJMP(wasm_rt_jmp_buf))
+#define wasm_rt_impl_try(thread_state) \
+  (wasm_rt_set_unwind_target(thread_state, &wasm_rt_jmp_buf), WASM_RT_SETJMP(wasm_rt_jmp_buf))
 #else
-#define wasm_rt_impl_try()                                    \
+#define wasm_rt_impl_try(thread_state)                                    \
   (wasm_rt_saved_call_stack_depth = wasm_rt_call_stack_depth, \
-   wasm_rt_set_unwind_target(&wasm_rt_jmp_buf),               \
+   wasm_rt_set_unwind_target(thread_state, &wasm_rt_jmp_buf), \
    WASM_RT_SETJMP(wasm_rt_jmp_buf))
 #endif
 

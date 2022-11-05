@@ -751,7 +751,7 @@ void CWriter::Write(const GotoLabel& goto_label) {
       const std::string& name =
           try_catch_stack_.at(label->try_catch_stack_size).name;
 
-      Write("wasm_rt_set_unwind_target(", name, "_outer_target);", Newline());
+      Write("wasm_rt_set_unwind_target(thread_state, ", name, "_outer_target);", Newline());
     }
   }
 
@@ -911,7 +911,7 @@ void CWriter::Write(const Const& const_) {
 
 void CWriter::WriteInitDecl() {
   Write("void " + module_prefix_ + "_init_module(void);", Newline());
-  Write("void " + module_prefix_ + "_instantiate(", ModuleInstanceTypeName(),
+  Write("void " + module_prefix_ + "_instantiate(wasm_rt_thread_state* thread_state, ", ModuleInstanceTypeName(),
         "*");
   for (auto import_module_name : import_module_set_) {
     Write(", struct ", MangleModuleInstanceTypeName(import_module_name), "*");
@@ -1307,7 +1307,7 @@ void CWriter::WriteFuncDeclarations() {
 void CWriter::WriteFuncDeclaration(const FuncDeclaration& decl,
                                    const std::string& name) {
   Write(ResultType(decl.sig.result_types), " ", name, "(");
-  Write(ModuleInstanceTypeName(), "*");
+  Write("wasm_rt_thread_state* thread_state, ", ModuleInstanceTypeName(), "*");
   WriteParamTypes(decl);
   Write(")");
 }
@@ -1316,14 +1316,14 @@ void CWriter::WriteImportFuncDeclaration(const FuncDeclaration& decl,
                                          const std::string& module_name,
                                          const std::string& name) {
   Write(ResultType(decl.sig.result_types), " ", name, "(");
-  Write("struct ", MangleModuleInstanceTypeName(module_name), "*");
+  Write("wasm_rt_thread_state* thread_state, struct ", MangleModuleInstanceTypeName(module_name), "*");
   WriteParamTypes(decl);
   Write(")");
 }
 
 void CWriter::WriteCallIndirectFuncDeclaration(const FuncDeclaration& decl,
                                                const std::string& name) {
-  Write(ResultType(decl.sig.result_types), " ", name, "(void*");
+  Write(ResultType(decl.sig.result_types), " ", name, "(wasm_rt_thread_state*, void*");
   WriteParamTypes(decl);
   Write(")");
 }
@@ -1727,7 +1727,7 @@ void CWriter::WriteExports(WriteExportsKind kind) {
     switch (export_->kind) {
       case ExternalKind::Func: {
         Write(OpenBrace());
-        Write("return ", ExternalRef(internal_name), "(");
+        Write("return ", ExternalRef(internal_name), "(thread_state, ");
 
         bool is_import = import_module_sym_map_.count(internal_name) != 0;
         if (is_import) {
@@ -1778,7 +1778,7 @@ void CWriter::WriteInit() {
   }
   Write(CloseBrace(), Newline());
 
-  Write(Newline(), "void " + module_prefix_ + "_instantiate(",
+  Write(Newline(), "void " + module_prefix_ + "_instantiate(wasm_rt_thread_state* thread_state, ",
         ModuleInstanceTypeName(), "* instance");
   for (auto import_module_name : import_module_set_) {
     Write(", struct ", MangleModuleInstanceTypeName(import_module_name), "* ",
@@ -1818,12 +1818,12 @@ void CWriter::WriteInit() {
     bool is_import =
         import_module_sym_map_.count(module_->GetFunc(*var)->name) != 0;
     if (is_import) {
-      Write("(instance->",
+      Write("(thread_state, instance->",
             MangleModuleInstanceName(
                 import_module_sym_map_[module_->GetFunc(*var)->name]) +
                 ");");
     } else {
-      Write("(instance);");
+      Write("(thread_state, instance);");
     }
     Write(Newline());
   }
@@ -1991,7 +1991,7 @@ void CWriter::WriteParamsAndLocals() {
 }
 
 void CWriter::WriteParams(const std::vector<std::string>& index_to_name) {
-  Write(ModuleInstanceTypeName(), "* instance");
+  Write("wasm_rt_thread_state* thread_state, ", ModuleInstanceTypeName(), "* instance");
   if (func_->GetNumParams() != 0) {
     Indent(4);
     for (Index i = 0; i < func_->GetNumParams(); ++i) {
@@ -2110,7 +2110,7 @@ size_t CWriter::BeginTry(const TryExpr& tryexpr) {
   Write(OpenBrace()); /* beginning of try-catch */
   const std::string tlabel = DefineLocalScopeName(tryexpr.block.label);
   Write("WASM_RT_UNWIND_TARGET *", tlabel,
-        "_outer_target = wasm_rt_get_unwind_target();", Newline());
+        "_outer_target = wasm_rt_get_unwind_target(thread_state);", Newline());
   Write("WASM_RT_UNWIND_TARGET ", tlabel, "_unwind_target;", Newline());
   Write("if (!wasm_rt_try(", tlabel, "_unwind_target)) ");
   Write(OpenBrace()); /* beginning of try block */
@@ -2118,11 +2118,11 @@ size_t CWriter::BeginTry(const TryExpr& tryexpr) {
   const size_t mark = MarkTypeStack();
   PushLabel(LabelType::Try, tryexpr.block.label, tryexpr.block.decl.sig);
   PushTypes(tryexpr.block.decl.sig.param_types);
-  Write("wasm_rt_set_unwind_target(&", tlabel, "_unwind_target);", Newline());
+  Write("wasm_rt_set_unwind_target(thread_state, &", tlabel, "_unwind_target);", Newline());
   PushTryCatch(tlabel);
   Write(tryexpr.block.exprs);
   ResetTypeStack(mark);
-  Write("wasm_rt_set_unwind_target(", tlabel, "_outer_target);", Newline());
+  Write("wasm_rt_set_unwind_target(thread_state, ", tlabel, "_outer_target);", Newline());
   Write(CloseBrace());          /* end of try block */
   Write(" else ", OpenBrace()); /* beginning of catch blocks or delegate */
   assert(label_stack_.back().name == tryexpr.block.label);
@@ -2143,16 +2143,16 @@ void CWriter::WriteTryCatch(const TryExpr& tryexpr) {
   assert(local_sym_map_.count(tryexpr.block.label) == 1);
   const std::string& tlabel = local_sym_map_[tryexpr.block.label];
 
-  Write("wasm_rt_set_unwind_target(", tlabel, "_outer_target);", Newline());
+  Write("wasm_rt_set_unwind_target(thread_state, ", tlabel, "_outer_target);", Newline());
   PopTryCatch();
 
   /* save the thrown exception to the stack if it might be rethrown later */
   PushFuncSection("rethrow_" + tlabel);
   Write("/* save exception ", tlabel, " for rethrow */", Newline());
-  Write("uint32_t ", tlabel, "_tag = wasm_rt_exception_tag();", Newline());
-  Write("uint32_t ", tlabel, "_size = wasm_rt_exception_size();", Newline());
+  Write("uint32_t ", tlabel, "_tag = wasm_rt_exception_tag(thread_state);", Newline());
+  Write("uint32_t ", tlabel, "_size = wasm_rt_exception_size(thread_state);", Newline());
   Write("void *", tlabel, " = alloca(", tlabel, "_size);", Newline());
-  Write("wasm_rt_memcpy(", tlabel, ", wasm_rt_exception(), ", tlabel, "_size);",
+  Write("wasm_rt_memcpy(", tlabel, ", wasm_rt_exception(thread_state), ", tlabel, "_size);",
         Newline());
   PushFuncSection();
 
@@ -2192,7 +2192,7 @@ void CWriter::Write(const Catch& c) {
     return;
   }
 
-  Write("if (wasm_rt_exception_tag() == ",
+  Write("if (wasm_rt_exception_tag(thread_state) == ",
         ExternalRef(module_->GetTag(c.var)->name), ") ", OpenBrace());
 
   const Tag* tag = module_->GetTag(c.var);
@@ -2200,7 +2200,7 @@ void CWriter::Write(const Catch& c) {
   const Index num_params = tag_type.GetNumParams();
   if (num_params == 1) {
     PushType(tag_type.GetParamType(0));
-    Write("wasm_rt_memcpy(&", StackVar(0), ", wasm_rt_exception(), sizeof(",
+    Write("wasm_rt_memcpy(&", StackVar(0), ", wasm_rt_exception(thread_state), sizeof(",
           tag_type.GetParamType(0), "));", Newline());
   } else if (num_params > 1) {
     for (const auto& type : tag_type.sig.param_types) {
@@ -2209,7 +2209,7 @@ void CWriter::Write(const Catch& c) {
     Write(OpenBrace());
     Write("struct ", MangleTagTypes(tag_type.sig.param_types), " tmp;",
           Newline());
-    Write("wasm_rt_memcpy(&tmp, wasm_rt_exception(), sizeof(tmp));", Newline());
+    Write("wasm_rt_memcpy(&tmp, wasm_rt_exception(thread_state), sizeof(tmp));", Newline());
     for (unsigned int i = 0; i < tag_type.sig.param_types.size(); ++i) {
       Write(StackVar(i));
       Writef(" = tmp.%c%d;", MangleType(tag_type.sig.param_types.at(i)), i);
@@ -2225,7 +2225,7 @@ void CWriter::Write(const Catch& c) {
 
 void CWriter::WriteThrow() {
   if (try_catch_stack_.empty()) {
-    Write("wasm_rt_throw();", Newline());
+    Write("wasm_rt_throw(thread_state);", Newline());
   } else {
     Write("goto ", try_catch_stack_.back().name, "_catch;", Newline());
     try_catch_stack_.back().used = true;
@@ -2250,10 +2250,10 @@ void CWriter::WriteTryDelegate(const TryExpr& tryexpr) {
     /* must be the implicit function label */
     assert(!try_catch_stack_.empty());
     const std::string& unwind_name = try_catch_stack_.at(0).name;
-    Write("wasm_rt_set_unwind_target(", unwind_name, "_outer_target);",
+    Write("wasm_rt_set_unwind_target(thread_state, ", unwind_name, "_outer_target);",
           Newline());
 
-    Write("wasm_rt_throw();", Newline());
+    Write("wasm_rt_throw(thread_state);", Newline());
   } else {
     const Label* label = FindLabel(tryexpr.delegate_target, false);
 
@@ -2265,10 +2265,10 @@ void CWriter::WriteTryDelegate(const TryExpr& tryexpr) {
     } else if (label->try_catch_stack_size == 0) {
       assert(!try_catch_stack_.empty());
       const std::string& unwind_name = try_catch_stack_.at(0).name;
-      Write("wasm_rt_set_unwind_target(", unwind_name, "_outer_target);",
+      Write("wasm_rt_set_unwind_target(thread_state, ", unwind_name, "_outer_target);",
             Newline());
 
-      Write("wasm_rt_throw();", Newline());
+      Write("wasm_rt_throw(thread_state);", Newline());
     } else {
       const std::string label_target =
           try_catch_stack_.at(label->try_catch_stack_size - 1).name + "_catch";
@@ -2338,7 +2338,7 @@ void CWriter::Write(const ExprList& exprs) {
           Write(StackVar(num_params - 1, func.GetResultType(0)), " = ");
         }
 
-        Write(GlobalVar(var), "(");
+        Write(GlobalVar(var), "(thread_state, ");
         bool is_import = import_module_sym_map_.count(func.name) != 0;
         if (is_import) {
           Write("instance->",
@@ -2389,6 +2389,7 @@ void CWriter::Write(const ExprList& exprs) {
         Write("CALL_INDIRECT(", ExternalInstanceRef(table->name), ", ");
         WriteCallIndirectFuncDeclaration(decl, "(*)");
         Write(", ", func_type_index, ", ", StackVar(0));
+        Write(", thread_state");
         Write(", ", ExternalInstanceRef(table->name), ".data[", StackVar(0),
               "].module_instance");
         for (Index i = 0; i < num_params; ++i) {
@@ -2804,10 +2805,10 @@ void CWriter::Write(const ExprList& exprs) {
 
         Index num_params = tag->decl.GetNumParams();
         if (num_params == 0) {
-          Write("wasm_rt_load_exception(", ExternalRef(tag->name),
+          Write("wasm_rt_load_exception(thread_state, ", ExternalRef(tag->name),
                 ", 0, NULL);", Newline());
         } else if (num_params == 1) {
-          Write("wasm_rt_load_exception(", ExternalRef(tag->name), ", sizeof(",
+          Write("wasm_rt_load_exception(thread_state, ", ExternalRef(tag->name), ", sizeof(",
                 tag->decl.GetParamType(0), "), &", StackVar(0), ");",
                 Newline());
         } else {
@@ -2818,7 +2819,7 @@ void CWriter::Write(const ExprList& exprs) {
             Write(StackVar(i), ", ");
           }
           Write("};", Newline());
-          Write("wasm_rt_load_exception(", ExternalRef(tag->name),
+          Write("wasm_rt_load_exception(thread_state, ", ExternalRef(tag->name),
                 ", sizeof(tmp), &tmp);", Newline());
           Write(CloseBrace(), Newline());
         }
@@ -2832,7 +2833,7 @@ void CWriter::Write(const ExprList& exprs) {
         const LocalName ex{rethrow->var.name()};
         assert(local_sym_map_.count(ex.name) == 1);
         func_includes_.insert("rethrow_" + local_sym_map_[ex.name]);
-        Write("wasm_rt_load_exception(", ex, "_tag, ", ex, "_size, ", ex, ");",
+        Write("wasm_rt_load_exception(thread_state, ", ex, "_tag, ", ex, "_size, ", ex, ");",
               Newline());
         WriteThrow();
       } break;

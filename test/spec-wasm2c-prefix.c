@@ -25,10 +25,10 @@ static void error(const char* file, int line, const char* format, ...) {
   va_end(args);
 }
 
-#define ASSERT_EXCEPTION(f)                                               \
+#define ASSERT_EXCEPTION(thread_state, f)                                 \
   do {                                                                    \
     g_tests_run++;                                                        \
-    if (wasm_rt_impl_try() == WASM_RT_TRAP_UNCAUGHT_EXCEPTION) {          \
+    if (wasm_rt_impl_try(thread_state) == WASM_RT_TRAP_UNCAUGHT_EXCEPTION) {          \
       g_tests_passed++;                                                   \
     } else {                                                              \
       (void)(f);                                                          \
@@ -36,10 +36,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                                     \
   } while (0)
 
-#define ASSERT_TRAP(f)                                         \
+#define ASSERT_TRAP(thread_state, f)                           \
   do {                                                         \
     g_tests_run++;                                             \
-    if (wasm_rt_impl_try() != 0) {                             \
+    if (wasm_rt_impl_try(thread_state) != 0) {                             \
       g_tests_passed++;                                        \
     } else {                                                   \
       (void)(f);                                               \
@@ -47,10 +47,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                          \
   } while (0)
 
-#define ASSERT_EXHAUSTION(f)                                     \
+#define ASSERT_EXHAUSTION(thread_state, f)                                     \
   do {                                                           \
     g_tests_run++;                                               \
-    wasm_rt_trap_t code = wasm_rt_impl_try();                    \
+    wasm_rt_trap_t code = wasm_rt_impl_try(thread_state);                    \
     switch (code) {                                              \
       case WASM_RT_TRAP_NONE:                                    \
         (void)(f);                                               \
@@ -68,10 +68,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                            \
   } while (0)
 
-#define ASSERT_RETURN(f)                               \
+#define ASSERT_RETURN(thread_state, f)                               \
   do {                                                 \
     g_tests_run++;                                     \
-    int trap_code = wasm_rt_impl_try();                \
+    int trap_code = wasm_rt_impl_try(thread_state);                \
     if (trap_code) {                                   \
       error(__FILE__, __LINE__, #f " trapped (%s).\n", \
             wasm_rt_strerror(trap_code));              \
@@ -81,10 +81,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                  \
   } while (0)
 
-#define ASSERT_RETURN_T(type, fmt, f, expected)                          \
+#define ASSERT_RETURN_T(thread_state, type, fmt, f, expected)                          \
   do {                                                                   \
     g_tests_run++;                                                       \
-    int trap_code = wasm_rt_impl_try();                                  \
+    int trap_code = wasm_rt_impl_try(thread_state);                                  \
     if (trap_code) {                                                     \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                   \
             wasm_rt_strerror(trap_code));                                \
@@ -100,10 +100,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                                    \
   } while (0)
 
-#define ASSERT_RETURN_FUNCREF(f, expected)                                \
+#define ASSERT_RETURN_FUNCREF(thread_state, f, expected)                                \
   do {                                                                    \
     g_tests_run++;                                                        \
-    int trap_code = wasm_rt_impl_try();                                   \
+    int trap_code = wasm_rt_impl_try(thread_state);                                   \
     if (trap_code) {                                                      \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                    \
             wasm_rt_strerror(trap_code));                                 \
@@ -118,10 +118,10 @@ static void error(const char* file, int line, const char* format, ...) {
     }                                                                     \
   } while (0)
 
-#define ASSERT_RETURN_NAN_T(type, itype, fmt, f, kind)                        \
+#define ASSERT_RETURN_NAN_T(thread_state, type, itype, fmt, f, kind)                        \
   do {                                                                        \
     g_tests_run++;                                                            \
-    if (wasm_rt_impl_try() != 0) {                                            \
+    if (wasm_rt_impl_try(thread_state) != 0) {                                            \
       error(__FILE__, __LINE__, #f " trapped.\n");                            \
     } else {                                                                  \
       type actual = f;                                                        \
@@ -144,10 +144,10 @@ static void error(const char* file, int line, const char* format, ...) {
 #define MULTI_i64 "%" PRIu64
 #define MULTI_f32 "%.9g"
 #define MULTI_f64 "%.17g"
-#define ASSERT_RETURN_MULTI_T(type, fmt, f, compare, expected, found)    \
+#define ASSERT_RETURN_MULTI_T(thread_state, type, fmt, f, compare, expected, found)    \
   do {                                                                   \
     g_tests_run++;                                                       \
-    if (wasm_rt_impl_try() != 0) {                                       \
+    if (wasm_rt_impl_try(thread_state) != 0) {                                       \
       error(__FILE__, __LINE__, #f " trapped.\n");                       \
     } else {                                                             \
       type actual = f;                                                   \
@@ -162,21 +162,21 @@ static void error(const char* file, int line, const char* format, ...) {
   } while (0)
 
 
-#define ASSERT_RETURN_I32(f, expected) ASSERT_RETURN_T(u32, "u", f, expected)
-#define ASSERT_RETURN_I64(f, expected) ASSERT_RETURN_T(u64, PRIu64, f, expected)
-#define ASSERT_RETURN_F32(f, expected) ASSERT_RETURN_T(f32, ".9g", f, expected)
-#define ASSERT_RETURN_F64(f, expected) ASSERT_RETURN_T(f64, ".17g", f, expected)
-#define ASSERT_RETURN_EXTERNREF(f, expected) \
-  ASSERT_RETURN_T(wasm_rt_externref_t, "p", f, expected);
+#define ASSERT_RETURN_I32(thread_state, f, expected) ASSERT_RETURN_T(thread_state, u32, "u", f, expected)
+#define ASSERT_RETURN_I64(thread_state, f, expected) ASSERT_RETURN_T(thread_state, u64, PRIu64, f, expected)
+#define ASSERT_RETURN_F32(thread_state, f, expected) ASSERT_RETURN_T(thread_state, f32, ".9g", f, expected)
+#define ASSERT_RETURN_F64(thread_state, f, expected) ASSERT_RETURN_T(thread_state, f64, ".17g", f, expected)
+#define ASSERT_RETURN_EXTERNREF(thread_state, f, expected) \
+  ASSERT_RETURN_T(thread_state, wasm_rt_externref_t, "p", f, expected);
 
-#define ASSERT_RETURN_CANONICAL_NAN_F32(f) \
-  ASSERT_RETURN_NAN_T(f32, u32, "08x", f, canonical)
-#define ASSERT_RETURN_CANONICAL_NAN_F64(f) \
-  ASSERT_RETURN_NAN_T(f64, u64, "016x", f, canonical)
-#define ASSERT_RETURN_ARITHMETIC_NAN_F32(f) \
-  ASSERT_RETURN_NAN_T(f32, u32, "08x", f, arithmetic)
-#define ASSERT_RETURN_ARITHMETIC_NAN_F64(f) \
-  ASSERT_RETURN_NAN_T(f64, u64, "016x", f, arithmetic)
+#define ASSERT_RETURN_CANONICAL_NAN_F32(thread_state, f) \
+  ASSERT_RETURN_NAN_T(thread_state, f32, u32, "08x", f, canonical)
+#define ASSERT_RETURN_CANONICAL_NAN_F64(thread_state, f) \
+  ASSERT_RETURN_NAN_T(thread_state, f64, u64, "016x", f, canonical)
+#define ASSERT_RETURN_ARITHMETIC_NAN_F32(thread_state, f) \
+  ASSERT_RETURN_NAN_T(thread_state, f32, u32, "08x", f, arithmetic)
+#define ASSERT_RETURN_ARITHMETIC_NAN_F64(thread_state, f) \
+  ASSERT_RETURN_NAN_T(thread_state, f64, u64, "016x", f, arithmetic)
 
 static bool is_equal_u32(u32 x, u32 y) {
   return x == y;
@@ -262,29 +262,29 @@ static Z_spectest_instance_t Z_spectest_instance;
 /*
  * spectest implementations
  */
-void Z_spectestZ_print(Z_spectest_instance_t* instance) {
+void Z_spectestZ_print(wasm_rt_thread_state* thread_state, Z_spectest_instance_t* instance) {
   printf("spectest.print()\n");
 }
 
-void Z_spectestZ_print_i32(Z_spectest_instance_t* instance, uint32_t i) {
+void Z_spectestZ_print_i32(wasm_rt_thread_state* thread_state,Z_spectest_instance_t* instance, uint32_t i) {
   printf("spectest.print_i32(%d)\n", i);
 }
 
-void Z_spectestZ_print_f32(Z_spectest_instance_t* instance, float f) {
+void Z_spectestZ_print_f32(wasm_rt_thread_state* thread_state,Z_spectest_instance_t* instance, float f) {
   printf("spectest.print_f32(%g)\n", f);
 }
 
-void Z_spectestZ_print_i32_f32(Z_spectest_instance_t* instance,
+void Z_spectestZ_print_i32_f32(wasm_rt_thread_state* thread_state, Z_spectest_instance_t* instance,
                                uint32_t i,
                                float f) {
   printf("spectest.print_i32_f32(%d %g)\n", i, f);
 }
 
-void Z_spectestZ_print_f64(Z_spectest_instance_t* instance, double d) {
+void Z_spectestZ_print_f64(wasm_rt_thread_state* thread_state, Z_spectest_instance_t* instance, double d) {
   printf("spectest.print_f64(%g)\n", d);
 }
 
-void Z_spectestZ_print_f64_f64(Z_spectest_instance_t* instance,
+void Z_spectestZ_print_f64_f64(wasm_rt_thread_state* thread_state, Z_spectest_instance_t* instance,
                                double d1,
                                double d2) {
   printf("spectest.print_f64_f64(%g %g)\n", d1, d2);

@@ -562,17 +562,16 @@ DEFINE_TABLE_FILL(funcref)
 DEFINE_TABLE_FILL(externref)
 
 static bool s_module_initialized = false;
-
-static u32 func_types[1];static wasm_rt_module_state* runtime_module_state;
-
+static wasm_rt_module_state* runtime_module_state;
+static u32 func_types[1];
 
 static void init_func_types(void) {
   func_types[0] = wasm_rt_register_func_type(runtime_module_state, 1, 1, WASM_RT_I32, WASM_RT_I32);
 }
 
-static u32 w2c_fac(Z_fac_instance_t*, u32);
+static u32 w2c_fac(wasm_rt_thread_state* thread_state, Z_fac_instance_t*, u32);
 
-static u32 w2c_fac(Z_fac_instance_t* instance, u32 w2c_p0) {
+static u32 w2c_fac(wasm_rt_thread_state* thread_state, Z_fac_instance_t* instance, u32 w2c_p0) {
   FUNC_PROLOGUE;
   u32 w2c_i0, w2c_i1, w2c_i2;
   w2c_i0 = w2c_p0;
@@ -585,7 +584,7 @@ static u32 w2c_fac(Z_fac_instance_t* instance, u32 w2c_p0) {
     w2c_i1 = w2c_p0;
     w2c_i2 = 1u;
     w2c_i1 -= w2c_i2;
-    w2c_i1 = w2c_fac(instance, w2c_i1);
+    w2c_i1 = w2c_fac(thread_state, instance, w2c_i1);
     w2c_i0 *= w2c_i1;
   }
   FUNC_EPILOGUE;
@@ -593,8 +592,8 @@ static u32 w2c_fac(Z_fac_instance_t* instance, u32 w2c_p0) {
 }
 
 /* export: 'fac' */
-u32 Z_facZ_fac(Z_fac_instance_t* instance, u32 w2c_p0) {
-  return w2c_fac(instance, w2c_p0);
+u32 Z_facZ_fac(wasm_rt_thread_state* thread_state, Z_fac_instance_t* instance, u32 w2c_p0) {
+  return w2c_fac(thread_state, instance, w2c_p0);
 }
 
 void Z_fac_init_module(void) {
@@ -604,7 +603,7 @@ void Z_fac_init_module(void) {
   init_func_types();
 }
 
-void Z_fac_instantiate(Z_fac_instance_t* instance) {
+void Z_fac_instantiate(wasm_rt_thread_state* thread_state, Z_fac_instance_t* instance) {
   assert(wasm_rt_is_initialized());
   assert(s_module_initialized);
 }

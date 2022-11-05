@@ -207,6 +207,11 @@ struct wasm_rt_module_state;
 
 typedef struct wasm_rt_module_state wasm_rt_module_state;
 
+/** An object that holds the per-thread Wasm runtime state. */
+struct wasm_rt_thread_state;
+
+typedef struct wasm_rt_thread_state wasm_rt_thread_state;
+
 /** Initialize the runtime. */
 void wasm_rt_init(void);
 
@@ -221,6 +226,12 @@ wasm_rt_module_state* wasm_rt_module_init(void);
 
 /** Free the runtime for a module */
 void wasm_rt_module_free(wasm_rt_module_state*);
+
+/** Instantiate the runtime for a thread */
+wasm_rt_thread_state* wasm_rt_thread_init(void);
+
+/** Free the runtime for a thread */
+void wasm_rt_thread_free(wasm_rt_thread_state* state);
 
 /**
  * Stop execution immediately and jump back to the call to `wasm_rt_impl_try`.
@@ -268,12 +279,12 @@ uint32_t wasm_rt_register_tag(uint32_t size);
 /**
  * Set the active exception to given tag, size, and contents.
  */
-void wasm_rt_load_exception(uint32_t tag, uint32_t size, const void* values);
+void wasm_rt_load_exception(wasm_rt_thread_state* thread_state, uint32_t tag, uint32_t size, const void* values);
 
 /**
  * Throw the active exception.
  */
-WASM_RT_NO_RETURN void wasm_rt_throw(void);
+WASM_RT_NO_RETURN void wasm_rt_throw(wasm_rt_thread_state* thread_state);
 
 /**
  * The type of an unwind target if an exception is thrown and caught.
@@ -283,27 +294,27 @@ WASM_RT_NO_RETURN void wasm_rt_throw(void);
 /**
  * Get the current unwind target if an exception is thrown.
  */
-WASM_RT_UNWIND_TARGET* wasm_rt_get_unwind_target(void);
+WASM_RT_UNWIND_TARGET* wasm_rt_get_unwind_target(wasm_rt_thread_state* thread_state);
 
 /**
  * Set the unwind target if an exception is thrown.
  */
-void wasm_rt_set_unwind_target(WASM_RT_UNWIND_TARGET* target);
+void wasm_rt_set_unwind_target(wasm_rt_thread_state* thread_state, WASM_RT_UNWIND_TARGET* target);
 
 /**
  * Tag of the active exception.
  */
-uint32_t wasm_rt_exception_tag(void);
+uint32_t wasm_rt_exception_tag(wasm_rt_thread_state* thread_state);
 
 /**
  * Size of the active exception.
  */
-uint32_t wasm_rt_exception_size(void);
+uint32_t wasm_rt_exception_size(wasm_rt_thread_state* thread_state);
 
 /**
  * Contents of the active exception.
  */
-void* wasm_rt_exception(void);
+void* wasm_rt_exception(wasm_rt_thread_state* thread_state);
 
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
 #define WASM_RT_SETJMP(buf) sigsetjmp(buf, 1)

@@ -24,14 +24,18 @@ int main(int argc, char** argv) {
   /* Declare an instance of the `fac` module. */
   Z_fac_instance_t instance;
 
+  wasm_rt_thread_state* thread_state = wasm_rt_thread_init();
+
   /* Construct the module instance. */
-  Z_fac_instantiate(&instance);
+  Z_fac_instantiate(thread_state, &instance);
 
   /* Call `fac`, using the mangled name. */
-  u32 result = Z_facZ_fac(&instance, x);
+  u32 result = Z_facZ_fac(thread_state, &instance, x);
 
   /* Print the result. */
   printf("fac(%u) -> %u\n", x, result);
+
+  wasm_rt_thread_free(thread_state);
 
   /* Free the fac module instance. */
   Z_fac_free(&instance);
