@@ -562,9 +562,8 @@ DEFINE_TABLE_FILL(funcref)
 DEFINE_TABLE_FILL(externref)
 
 static bool s_module_initialized = false;
-
-static u32 func_types[1];static wasm_rt_module_state* runtime_module_state;
-
+static wasm_rt_module_state* runtime_module_state;
+static u32 func_types[1];
 
 static void init_func_types(void) {
   func_types[0] = wasm_rt_register_func_type(runtime_module_state, 1, 1, WASM_RT_I32, WASM_RT_I32);

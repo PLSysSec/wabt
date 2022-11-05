@@ -44,6 +44,10 @@ void Z_hostZ_buf_done(struct Z_host_instance_t* instance, u32 ptr, u32 size) {
   return buf_done(instance, ptr, size);
 }
 
+/* Reference to the variable that holds the thread local context for the Wasm
+ * runtime. */
+extern _Thread_local wasm_rt_thread_state* wasm_rt_curr_thread_state;
+
 int main(int argc, char** argv) {
   /* Make sure there is at least one command-line argument. */
   if (argc < 2) {
@@ -64,6 +68,12 @@ int main(int argc, char** argv) {
   /* Allocate 1 page of wasm memory (64KiB). */
   wasm_rt_allocate_memory(&host_instance.memory, 1, 1);
 
+  /* Create a thread context structure for our current execution */
+  wasm_rt_thread_state* thread_state = wasm_rt_thread_init();
+
+  /* Set the current thread context for the Wasm runtime. */
+  wasm_rt_curr_thread_state = thread_state;
+
   /* Construct the module instance */
   Z_rot13_instantiate(&rot13_instance, &host_instance);
 
@@ -79,6 +89,12 @@ int main(int argc, char** argv) {
 
   /* Free the rot13 module instance. */
   Z_rot13_free(&rot13_instance);
+
+  /* Clear the current thread context for the Wasm runtime. */
+  wasm_rt_curr_thread_state = 0;
+
+  /* Free the thread context structure */
+  wasm_rt_thread_free(thread_state);
 
   /* Free the rot13 module. */
   Z_rot13_free_module();

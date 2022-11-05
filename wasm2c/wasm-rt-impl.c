@@ -37,7 +37,6 @@
 #endif
 
 #define PAGE_SIZE 65536
-#define MAX_EXCEPTION_SIZE PAGE_SIZE
 
 typedef struct FuncType {
   wasm_rt_type_t* params;
@@ -51,7 +50,6 @@ static bool g_signal_handler_installed = false;
 static char* g_alt_stack;
 #else
 uint32_t wasm_rt_call_stack_depth;
-uint32_t wasm_rt_saved_call_stack_depth;
 #endif
 
 /** An object that holds the per-module Wasm runtime state for this wasm
@@ -61,20 +59,27 @@ struct wasm_rt_module_state {
   FuncType* func_types;
 };
 
-jmp_buf wasm_rt_jmp_buf;
+_Thread_local wasm_rt_thread_state* wasm_rt_curr_thread_state = 0;
 
-static uint32_t g_active_exception_tag;
-static uint8_t g_active_exception[MAX_EXCEPTION_SIZE];
-static uint32_t g_active_exception_size;
-
-static jmp_buf* g_unwind_target;
+static wasm_rt_thread_state* wasm_get_curr_thread_state() {
+  if (!wasm_rt_curr_thread_state) {
+    printf(
+        "Wasm runtime thread state not set. Set wasm_rt_curr_thread_state via "
+        "WASM_RT_SET_CURRENT_THREAD_STATE before invoking Wasm functions.\n");
+    abort();
+  }
+  return wasm_rt_curr_thread_state;
+}
 
 void wasm_rt_trap(wasm_rt_trap_t code) {
   assert(code != WASM_RT_TRAP_NONE);
+
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+
 #if !WASM_RT_MEMCHECK_SIGNAL_HANDLER
-  wasm_rt_call_stack_depth = wasm_rt_saved_call_stack_depth;
+  wasm_rt_call_stack_depth = thread_state->saved_call_stack_depth;
 #endif
-  WASM_RT_LONGJMP(wasm_rt_jmp_buf, code);
+  WASM_RT_LONGJMP(thread_state->trap_jmp_buf, code);
 }
 
 static bool func_types_are_equal(FuncType* a, FuncType* b) {
@@ -128,45 +133,54 @@ uint32_t wasm_rt_register_func_type(wasm_rt_module_state* state,
 uint32_t wasm_rt_register_tag(uint32_t size) {
   static uint32_t s_tag_count = 0;
 
-  if (size > MAX_EXCEPTION_SIZE) {
+  if (size > WASM_RT_MAX_EXCEPTION_SIZE) {
     wasm_rt_trap(WASM_RT_TRAP_EXHAUSTION);
   }
   return s_tag_count++;
 }
 
 void wasm_rt_load_exception(uint32_t tag, uint32_t size, const void* values) {
-  assert(size <= MAX_EXCEPTION_SIZE);
+  assert(size <= WASM_RT_MAX_EXCEPTION_SIZE);
 
-  g_active_exception_tag = tag;
-  g_active_exception_size = size;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+
+  thread_state->active_exception_tag = tag;
+  thread_state->active_exception_size = size;
 
   if (size) {
-    memcpy(g_active_exception, values, size);
+    memcpy(thread_state->active_exception, values, size);
   }
 }
 
 WASM_RT_NO_RETURN void wasm_rt_throw(void) {
-  WASM_RT_LONGJMP(*g_unwind_target, WASM_RT_TRAP_UNCAUGHT_EXCEPTION);
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  WASM_RT_LONGJMP(*(thread_state->unwind_target),
+                  WASM_RT_TRAP_UNCAUGHT_EXCEPTION);
 }
 
 WASM_RT_UNWIND_TARGET* wasm_rt_get_unwind_target(void) {
-  return g_unwind_target;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  return thread_state->unwind_target;
 }
 
 void wasm_rt_set_unwind_target(WASM_RT_UNWIND_TARGET* target) {
-  g_unwind_target = target;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  thread_state->unwind_target = target;
 }
 
 uint32_t wasm_rt_exception_tag(void) {
-  return g_active_exception_tag;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  return thread_state->active_exception_tag;
 }
 
 uint32_t wasm_rt_exception_size(void) {
-  return g_active_exception_size;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  return thread_state->active_exception_size;
 }
 
 void* wasm_rt_exception(void) {
-  return g_active_exception;
+  wasm_rt_thread_state* thread_state = wasm_get_curr_thread_state();
+  return thread_state->active_exception;
 }
 
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
@@ -297,6 +311,17 @@ void wasm_rt_module_free(wasm_rt_module_state* state) {
       free(state->func_types[i].results);
     }
     free(state->func_types);
+    free(state);
+  }
+}
+
+wasm_rt_thread_state* wasm_rt_thread_init(void) {
+  wasm_rt_thread_state* state = calloc(1, sizeof(wasm_rt_thread_state));
+  return state;
+}
+
+void wasm_rt_thread_free(wasm_rt_thread_state* state) {
+  if (state) {
     free(state);
   }
 }

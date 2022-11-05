@@ -23,16 +23,33 @@
 extern "C" {
 #endif
 
-/** A setjmp buffer used for handling traps. */
-extern jmp_buf wasm_rt_jmp_buf;
+#define WASM_RT_MAX_EXCEPTION_SIZE 65536
+
+/** An object that holds the per-thread Wasm runtime state for this wasm
+ * runtime. */
+struct wasm_rt_thread_state {
+  uint32_t active_exception_tag;
+  uint8_t active_exception[WASM_RT_MAX_EXCEPTION_SIZE];
+  uint32_t active_exception_size;
+  jmp_buf* unwind_target;
+  /** A setjmp buffer used for handling traps. */
+  jmp_buf trap_jmp_buf;
+#if !WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
+  /** Saved call stack depth that will be restored in case a trap occurs. */
+  extern uint32_t saved_call_stack_depth;
+#endif
+};
+
+extern _Thread_local wasm_rt_thread_state* wasm_rt_curr_thread_state;
 
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
 #define WASM_RT_LONGJMP(buf, val) siglongjmp(buf, val)
 #else
 #define WASM_RT_LONGJMP(buf, val) longjmp(buf, val)
-/** Saved call stack depth that will be restored in case a trap occurs. */
-extern uint32_t wasm_rt_saved_call_stack_depth;
 #endif
+
+#define WASM_RT_SET_CURRENT_THREAD_STATE(thread_state) \
+  wasm_rt_curr_thread_state = thread_state
 
 /**
  * Convenience macro to use before calling a wasm function. On first execution
@@ -51,13 +68,16 @@ extern uint32_t wasm_rt_saved_call_stack_depth;
  * ```
  */
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX
-#define wasm_rt_impl_try() \
-  (wasm_rt_set_unwind_target(&wasm_rt_jmp_buf), WASM_RT_SETJMP(wasm_rt_jmp_buf))
+#define wasm_rt_impl_try(thread_state)                       \
+  (WASM_RT_SET_CURRENT_THREAD_STATE(thread_state),           \
+   wasm_rt_set_unwind_target(&(thread_state->trap_jmp_buf)), \
+   WASM_RT_SETJMP(thread_state->trap_jmp_buf))
 #else
-#define wasm_rt_impl_try()                                    \
-  (wasm_rt_saved_call_stack_depth = wasm_rt_call_stack_depth, \
-   wasm_rt_set_unwind_target(&wasm_rt_jmp_buf),               \
-   WASM_RT_SETJMP(wasm_rt_jmp_buf))
+#define wasm_rt_impl_try(thread_state)                              \
+  (WASM_RT_SET_CURRENT_THREAD_STATE(thread_state),                  \
+   thread_state->saved_call_stack_depth = wasm_rt_call_stack_depth, \
+   wasm_rt_set_unwind_target(&(thread_state->trap_jmp_buf)),        \
+   WASM_RT_SETJMP(thread_state->trap_jmp_buf))
 #endif
 
 #ifdef __cplusplus

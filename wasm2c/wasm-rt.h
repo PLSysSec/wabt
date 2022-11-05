@@ -207,6 +207,11 @@ struct wasm_rt_module_state;
 
 typedef struct wasm_rt_module_state wasm_rt_module_state;
 
+/** An object that holds the per-thread Wasm runtime state. */
+struct wasm_rt_thread_state;
+
+typedef struct wasm_rt_thread_state wasm_rt_thread_state;
+
 /** Initialize the runtime. */
 void wasm_rt_init(void);
 
@@ -221,6 +226,12 @@ wasm_rt_module_state* wasm_rt_module_init(void);
 
 /** Free the runtime for a module */
 void wasm_rt_module_free(wasm_rt_module_state*);
+
+/** Instantiate the runtime for a thread */
+wasm_rt_thread_state* wasm_rt_thread_init(void);
+
+/** Free the runtime for a thread */
+void wasm_rt_thread_free(wasm_rt_thread_state* state);
 
 /**
  * Stop execution immediately and jump back to the call to `wasm_rt_impl_try`.
