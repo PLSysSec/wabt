@@ -202,6 +202,11 @@ typedef struct {
   uint32_t size;
 } wasm_rt_externref_table_t;
 
+/** An object that holds the per-module Wasm runtime state. */
+struct wasm_rt_module_state;
+
+typedef struct wasm_rt_module_state wasm_rt_module_state;
+
 /** Initialize the runtime. */
 void wasm_rt_init(void);
 
@@ -210,6 +215,12 @@ bool wasm_rt_is_initialized(void);
 
 /** Free the runtime's state. */
 void wasm_rt_free(void);
+
+/** Instantiate the runtime for a module */
+wasm_rt_module_state* wasm_rt_module_init(void);
+
+/** Free the runtime for a module */
+void wasm_rt_module_free(wasm_rt_module_state*);
 
 /**
  * Stop execution immediately and jump back to the call to `wasm_rt_impl_try`.
@@ -244,7 +255,10 @@ const char* wasm_rt_strerror(wasm_rt_trap_t trap);
  *    => returns 1
  *  ```
  */
-uint32_t wasm_rt_register_func_type(uint32_t params, uint32_t results, ...);
+uint32_t wasm_rt_register_func_type(wasm_rt_module_state* state,
+                                    uint32_t params,
+                                    uint32_t results,
+                                    ...);
 
 /**
  * Register a tag with the given size. Returns the tag.

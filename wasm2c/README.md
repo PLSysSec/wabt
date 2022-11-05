@@ -70,8 +70,10 @@ for providing it.
 
 int main(int argc, char** argv) {
   /* Make sure there is at least one command-line argument. */
-  if (argc < 2)
+  if (argc < 2) {
+    printf("Invalid argument. Expected '%s NUMBER'\n", argv[0]);
     return 1;
+  }
 
   /* Convert the argument from a string to an int. We'll implicitly cast the int
   to a `u32`, which is what `fac` expects. */
@@ -96,8 +98,11 @@ int main(int argc, char** argv) {
   /* Print the result. */
   printf("fac(%u) -> %u\n", x, result);
 
-  /* Free the fac module. */
+  /* Free the fac module instance. */
   Z_fac_free(&instance);
+
+  /* Free the fac module. */
+  Z_fac_free_module();
 
   /* Free the Wasm runtime state. */
   wasm_rt_free();
@@ -172,6 +177,7 @@ typedef struct Z_fac_instance_t {
 
 void Z_fac_init_module(void);
 void Z_fac_instantiate(Z_fac_instance_t*);
+void Z_fac_free_module(void);
 void Z_fac_free(Z_fac_instance_t*);
 
 /* export: 'fac' */
@@ -381,12 +387,16 @@ must be of type `WASM_RT_UNWIND_TARGET`.
 Finally, `fac.h` defines the module instance type (which in the case
 of `fac` is essentially empty), and the exported symbols provided by
 the module. In our example, the only function we exported was
-`fac`. `Z_fac_init_module()` initializes the whole module and must be
+`fac`. `Z_fac_init_module()` initializes the whole module state and must be
 called before any instance of the module is used.
 
 `Z_fac_instantiate(Z_fac_instance_t*)` creates an instance of
 the module and must be called before the module instance can be
 used. `Z_fac_free(Z_fac_instance_t*)` frees the instance.
+
+`Z_fac_free_module()` frees the whole module state and must be called when all
+instances of this module have completed and no further instances are going to be
+created.
 
 ```c
 typedef struct Z_fac_instance_t {
@@ -395,6 +405,7 @@ typedef struct Z_fac_instance_t {
 
 void Z_fac_init_module(void);
 void Z_fac_instantiate(Z_fac_instance_t*);
+void Z_fac_free_module(void);
 void Z_fac_free(Z_fac_instance_t*);
 
 /* export: 'fac' */
@@ -598,9 +609,12 @@ int main(int argc, char** argv) {
   host_instance_2.input = argv[2];
   Z_rot13Z_rot13(&rot13_instance_2);
 
-  /* Free the rot13 modules. */
+  /* Free the rot13 module instances. */
   Z_rot13_free(&rot13_instance_1);
   Z_rot13_free(&rot13_instance_2);
+
+  /* Free the rot13 module. */
+  Z_rot13_free_module();
 
   /* Free the Wasm runtime state. */
   wasm_rt_free();

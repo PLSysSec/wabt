@@ -77,8 +77,11 @@ int main(int argc, char** argv) {
     Z_rot13Z_rot13(&rot13_instance);
   }
 
-  /* Free the rot13 module. */
+  /* Free the rot13 module instance. */
   Z_rot13_free(&rot13_instance);
+
+  /* Free the rot13 module. */
+  Z_rot13_free_module();
 
   /* Free the Wasm runtime state. */
   wasm_rt_free();

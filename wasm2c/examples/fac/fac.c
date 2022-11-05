@@ -518,23 +518,8 @@ static inline void funcref_table_init(wasm_rt_funcref_table_t* dest,
     if (UNLIKELY(src_addr + (uint64_t)n > src->size))                        \
       TRAP(OOB);                                                             \
                                                                              \
-    if (n == 0) {                                                            \
-      return;                                                                \
-    }                                                                        \
-                                                                             \
-    if (dest->data + dest_addr == src->data + src_addr) {                    \
-      return;                                                                \
-    }                                                                        \
-                                                                             \
-    if (dest->data + dest_addr < src->data + src_addr) {                     \
-      for (u32 i = 0; i < n; i++) {                                          \
-        dest->data[dest_addr + i] = src->data[src_addr + i];                 \
-      }                                                                      \
-    } else {                                                                 \
-      for (u32 i = n; i > 0; i--) {                                          \
-        dest->data[dest_addr + i - 1] = src->data[src_addr + i - 1];         \
-      }                                                                      \
-    }                                                                        \
+    memmove(dest->data + dest_addr, src->data + src_addr,                    \
+            n * sizeof(wasm_rt_##type##_t));                                 \
   }
 
 DEFINE_TABLE_COPY(funcref)
@@ -578,10 +563,11 @@ DEFINE_TABLE_FILL(externref)
 
 static bool s_module_initialized = false;
 
-static u32 func_types[1];
+static u32 func_types[1];static wasm_rt_module_state* runtime_module_state;
+
 
 static void init_func_types(void) {
-  func_types[0] = wasm_rt_register_func_type(1, 1, WASM_RT_I32, WASM_RT_I32);
+  func_types[0] = wasm_rt_register_func_type(runtime_module_state, 1, 1, WASM_RT_I32, WASM_RT_I32);
 }
 
 static u32 w2c_fac(Z_fac_instance_t*, u32);
@@ -614,12 +600,17 @@ u32 Z_facZ_fac(Z_fac_instance_t* instance, u32 w2c_p0) {
 void Z_fac_init_module(void) {
   assert(wasm_rt_is_initialized());
   s_module_initialized = true;
+  runtime_module_state = wasm_rt_module_init();
   init_func_types();
 }
 
 void Z_fac_instantiate(Z_fac_instance_t* instance) {
   assert(wasm_rt_is_initialized());
   assert(s_module_initialized);
+}
+
+void Z_fac_free_module(void) {
+  wasm_rt_module_free(runtime_module_state);
 }
 
 void Z_fac_free(Z_fac_instance_t* instance) {

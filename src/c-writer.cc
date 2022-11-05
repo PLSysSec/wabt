@@ -920,6 +920,7 @@ void CWriter::WriteInitDecl() {
 }
 
 void CWriter::WriteFreeDecl() {
+  Write("void " + module_prefix_ + "_free_module(void);", Newline());
   Write("void " + module_prefix_ + "_free(", ModuleInstanceTypeName(), "*);",
         Newline());
 }
@@ -1034,11 +1035,12 @@ void CWriter::WriteTagTypes() {
 }
 
 void CWriter::WriteFuncTypes() {
+  Write("static wasm_rt_module_state* runtime_module_state;", Newline());
+
   if (module_->types.empty()) {
     return;
   }
 
-  Write(Newline());
   Writef("static u32 func_types[%" PRIzd "];", module_->types.size());
   Write(Newline());
 
@@ -1048,8 +1050,9 @@ void CWriter::WriteFuncTypes() {
     FuncType* func_type = cast<FuncType>(type);
     Index num_params = func_type->GetNumParams();
     Index num_results = func_type->GetNumResults();
-    Write("func_types[", func_type_index, "] = wasm_rt_register_func_type(",
-          num_params, ", ", num_results);
+    Write("func_types[", func_type_index,
+          "] = wasm_rt_register_func_type(runtime_module_state, ", num_params,
+          ", ", num_results);
     for (Index i = 0; i < num_params; ++i) {
       Write(", ", TypeEnum(func_type->GetParamType(i)));
     }
@@ -1766,6 +1769,7 @@ void CWriter::WriteInit() {
         OpenBrace());
   Write("assert(wasm_rt_is_initialized());", Newline());
   Write("s_module_initialized = true;", Newline());
+  Write("runtime_module_state = wasm_rt_module_init();", Newline());
   if (!module_->types.empty()) {
     Write("init_func_types();", Newline());
   }
@@ -1869,6 +1873,11 @@ void CWriter::WriteInitInstanceImport() {
 }
 
 void CWriter::WriteFree() {
+  Write(Newline(), "void " + module_prefix_ + "_free_module(void) ",
+        OpenBrace());
+  Write("wasm_rt_module_free(runtime_module_state);", Newline());
+  Write(CloseBrace(), Newline());
+
   Write(Newline(), "void " + module_prefix_ + "_free(",
         ModuleInstanceTypeName(), "* instance) ", OpenBrace());
 

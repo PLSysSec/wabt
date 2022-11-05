@@ -54,8 +54,12 @@ uint32_t wasm_rt_call_stack_depth;
 uint32_t wasm_rt_saved_call_stack_depth;
 #endif
 
-static FuncType* g_func_types;
-static uint32_t g_func_type_count;
+/** An object that holds the per-module Wasm runtime state for this wasm
+ * runtime. */
+struct wasm_rt_module_state {
+  uint32_t func_type_count;
+  FuncType* func_types;
+};
 
 jmp_buf wasm_rt_jmp_buf;
 
@@ -86,7 +90,8 @@ static bool func_types_are_equal(FuncType* a, FuncType* b) {
   return 1;
 }
 
-uint32_t wasm_rt_register_func_type(uint32_t param_count,
+uint32_t wasm_rt_register_func_type(wasm_rt_module_state* state,
+                                    uint32_t param_count,
                                     uint32_t result_count,
                                     ...) {
   FuncType func_type;
@@ -105,17 +110,18 @@ uint32_t wasm_rt_register_func_type(uint32_t param_count,
     func_type.results[i] = va_arg(args, wasm_rt_type_t);
   va_end(args);
 
-  for (i = 0; i < g_func_type_count; ++i) {
-    if (func_types_are_equal(&g_func_types[i], &func_type)) {
+  for (i = 0; i < state->func_type_count; ++i) {
+    if (func_types_are_equal(&state->func_types[i], &func_type)) {
       free(func_type.params);
       free(func_type.results);
       return i + 1;
     }
   }
 
-  uint32_t idx = g_func_type_count++;
-  g_func_types = realloc(g_func_types, g_func_type_count * sizeof(FuncType));
-  g_func_types[idx] = func_type;
+  uint32_t idx = state->func_type_count++;
+  state->func_types =
+      realloc(state->func_types, state->func_type_count * sizeof(FuncType));
+  state->func_types[idx] = func_type;
   return idx + 1;
 }
 
@@ -277,6 +283,22 @@ void wasm_rt_free(void) {
 #if WASM_RT_MEMCHECK_SIGNAL_HANDLER_POSIX && !WASM_RT_SKIP_SIGNAL_RECOVERY
   free(g_alt_stack);
 #endif
+}
+
+wasm_rt_module_state* wasm_rt_module_init(void) {
+  wasm_rt_module_state* state = calloc(1, sizeof(wasm_rt_module_state));
+  return state;
+}
+
+void wasm_rt_module_free(wasm_rt_module_state* state) {
+  if (state) {
+    for (uint32_t i = 0; i < state->func_type_count; ++i) {
+      free(state->func_types[i].params);
+      free(state->func_types[i].results);
+    }
+    free(state->func_types);
+    free(state);
+  }
 }
 
 void wasm_rt_allocate_memory(wasm_rt_memory_t* memory,

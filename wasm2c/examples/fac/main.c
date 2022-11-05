@@ -33,8 +33,11 @@ int main(int argc, char** argv) {
   /* Print the result. */
   printf("fac(%u) -> %u\n", x, result);
 
-  /* Free the fac module. */
+  /* Free the fac module instance. */
   Z_fac_free(&instance);
+
+  /* Free the fac module. */
+  Z_fac_free_module();
 
   /* Free the Wasm runtime state. */
   wasm_rt_free();

@@ -31,6 +31,7 @@ typedef struct Z_fac_instance_t {
 
 void Z_fac_init_module(void);
 void Z_fac_instantiate(Z_fac_instance_t*);
+void Z_fac_free_module(void);
 void Z_fac_free(Z_fac_instance_t*);
 
 /* export: 'fac' */
