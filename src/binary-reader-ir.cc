@@ -795,6 +795,7 @@ Result BinaryReaderIR::OnAtomicLoadExpr(Opcode opcode,
                                         Index memidx,
                                         Address alignment_log2,
                                         Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicLoadExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
@@ -803,6 +804,7 @@ Result BinaryReaderIR::OnAtomicStoreExpr(Opcode opcode,
                                          Index memidx,
                                          Address alignment_log2,
                                          Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicStoreExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
@@ -811,6 +813,7 @@ Result BinaryReaderIR::OnAtomicRmwExpr(Opcode opcode,
                                        Index memidx,
                                        Address alignment_log2,
                                        Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicRmwExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
@@ -819,6 +822,7 @@ Result BinaryReaderIR::OnAtomicRmwCmpxchgExpr(Opcode opcode,
                                               Index memidx,
                                               Address alignment_log2,
                                               Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicRmwCmpxchgExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
@@ -827,11 +831,13 @@ Result BinaryReaderIR::OnAtomicWaitExpr(Opcode opcode,
                                         Index memidx,
                                         Address alignment_log2,
                                         Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicWaitExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
 
 Result BinaryReaderIR::OnAtomicFenceExpr(uint32_t consistency_model) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicFenceExpr>(consistency_model));
 }
 
@@ -839,6 +845,7 @@ Result BinaryReaderIR::OnAtomicNotifyExpr(Opcode opcode,
                                           Index memidx,
                                           Address alignment_log2,
                                           Address offset) {
+  module_->features_used.atomic_ops = true;
   return AppendExpr(std::make_unique<AtomicNotifyExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }

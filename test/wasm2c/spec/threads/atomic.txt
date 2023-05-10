@@ -1,0 +1,6 @@
+;;; TOOL: run-spec-wasm2c
+;;; STDIN_FILE: test/wasm2c/spec/threads/atomic_supported.wast
+;;; ARGS*: --enable-threads
+(;; STDOUT ;;;
+184/184 tests passed.
+;;; STDOUT ;;)
