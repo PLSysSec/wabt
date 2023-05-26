@@ -236,3 +236,140 @@ DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw8_cmpxchg_u, u64, u8);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw16_cmpxchg_u, u64, u16);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
+
+
+static u32 memory_atomic_wait32(wasm_rt_memory_t* mem, u64 addr, u32 expected, s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  if (i32_atomic_load(mem, addr) != expected) {
+    return 1;
+  }
+
+
+  return 0;
+}
+
+static u32 memory_atomic_wait64(wasm_rt_memory_t* mem, u64 addr, u64 expected, s64 timeout) {
+  return 0;
+}
+
+static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+  return 0;
+}
+
+// // glib
+
+// inline void
+// __thread_yield() noexcept
+// {
+// #if defined _GLIBCXX_HAS_GTHREADS && defined _GLIBCXX_USE_SCHED_YIELD
+//   __gthread_yield();
+// #endif
+// }
+
+// inline void
+// __thread_relax() noexcept
+// {
+// #if defined __i386__ || defined __x86_64__
+//   __builtin_ia32_pause();
+// #else
+//   __thread_yield();
+// #endif
+// }
+
+//     constexpr auto __atomic_spin_count_1 = 12;
+//     constexpr auto __atomic_spin_count_2 = 4;
+
+// template<typename _Pred, typename _Spin = __default_spin_policy>
+// bool
+// __atomic_spin(_Pred& __pred, _Spin __spin = _Spin{ }) noexcept
+// {
+// 	for (auto __i = 0; __i < __atomic_spin_count; ++__i)
+// 	  {
+// 	    if (__pred())
+// 	      return true;
+
+// 	    if (__i < __atomic_spin_count_relax)
+// 	      __detail::__thread_relax();
+// 	    else
+// 	      __detail::__thread_yield();
+// 	  }
+
+// 	while (__spin())
+// 	  {
+// 	    if (__pred())
+// 	      return true;
+// 	  }
+
+// 	return false;
+// }
+
+// https://github.com/ogiroux/atomic_wait
+// https://stackoverflow.com/questions/62859596/difference-between-stdatomic-and-stdcondition-variable-wait-notify-method
+//
+
+// //boost 
+
+//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
+//     {
+//         storage_type new_val = base_type::load(storage, order);
+//         if (new_val == old_val)
+//         {
+//             scoped_wait_state wait_state(&storage);
+//             new_val = base_type::load(storage, order);
+//             while (new_val == old_val)
+//             {
+//                 wait_state.wait();
+//                 new_val = base_type::load(storage, order);
+//             }
+//         }
+
+//         return new_val;
+//     }
+
+//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
+//     {
+//         storage_type new_val = base_type::load(storage, order);
+//         if (new_val == old_val)
+//         {
+//             for (unsigned int i = 0u; i < 16u; ++i)
+//             {
+//                 atomics::detail::pause();
+//                 new_val = base_type::load(storage, order);
+//                 if (new_val != old_val)
+//                     goto finish;
+//             }
+
+//             do
+//             {
+//                 atomics::detail::wait_some();
+//                 new_val = base_type::load(storage, order);
+//             }
+//             while (new_val == old_val);
+//         }
+
+//     finish:
+//         return new_val;
+//     }
+
+// // C++ std
+
+// template <class _Tp>
+// __ABI void __cxx_atomic_wait(_Tp const* ptr, _Tp const val, int order) {
+// #ifndef __NO_SPIN
+//     if(__builtin_expect(__atomic_load_n(ptr, order) != val,1))
+//         return;
+//     for(int i = 0; i < 16; ++i) {
+//         if(__atomic_load_n(ptr, order) != val)
+//             return;
+//         if(i < 12)
+//             __YIELD_PROCESSOR();
+//         else
+//             __YIELD();
+//     }
+// #endif
+//     while(val == __atomic_load_n(ptr, order))
+// #ifndef __NO_WAIT
+//         __cxx_atomic_try_wait_slow(ptr, val, order)
+// #endif
+//         ;
+// }

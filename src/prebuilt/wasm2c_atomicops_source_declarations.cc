@@ -435,4 +435,257 @@ R"w2c_template(DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 )w2c_template"
 R"w2c_template(DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
 )w2c_template"
+R"w2c_template(
+
+)w2c_template"
+R"w2c_template(static u32 memory_atomic_wait32(wasm_rt_memory_t* mem, u64 addr, u32 expected, s64 timeout) {
+)w2c_template"
+R"w2c_template(  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+)w2c_template"
+R"w2c_template(  if (i32_atomic_load(mem, addr) != expected) {
+)w2c_template"
+R"w2c_template(    return 1;
+)w2c_template"
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(
+
+)w2c_template"
+R"w2c_template(  return 0;
+)w2c_template"
+R"w2c_template(}
+)w2c_template"
+R"w2c_template(
+static u32 memory_atomic_wait64(wasm_rt_memory_t* mem, u64 addr, u64 expected, s64 timeout) {
+)w2c_template"
+R"w2c_template(  return 0;
+)w2c_template"
+R"w2c_template(}
+)w2c_template"
+R"w2c_template(
+static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+)w2c_template"
+R"w2c_template(  return 0;
+)w2c_template"
+R"w2c_template(}
+)w2c_template"
+R"w2c_template(
+// // glib
+)w2c_template"
+R"w2c_template(
+// inline void
+)w2c_template"
+R"w2c_template(// __thread_yield() noexcept
+)w2c_template"
+R"w2c_template(// {
+)w2c_template"
+R"w2c_template(// #if defined _GLIBCXX_HAS_GTHREADS && defined _GLIBCXX_USE_SCHED_YIELD
+)w2c_template"
+R"w2c_template(//   __gthread_yield();
+)w2c_template"
+R"w2c_template(// #endif
+)w2c_template"
+R"w2c_template(// }
+)w2c_template"
+R"w2c_template(
+// inline void
+)w2c_template"
+R"w2c_template(// __thread_relax() noexcept
+)w2c_template"
+R"w2c_template(// {
+)w2c_template"
+R"w2c_template(// #if defined __i386__ || defined __x86_64__
+)w2c_template"
+R"w2c_template(//   __builtin_ia32_pause();
+)w2c_template"
+R"w2c_template(// #else
+)w2c_template"
+R"w2c_template(//   __thread_yield();
+)w2c_template"
+R"w2c_template(// #endif
+)w2c_template"
+R"w2c_template(// }
+)w2c_template"
+R"w2c_template(
+//     constexpr auto __atomic_spin_count_1 = 12;
+)w2c_template"
+R"w2c_template(//     constexpr auto __atomic_spin_count_2 = 4;
+)w2c_template"
+R"w2c_template(
+// template<typename _Pred, typename _Spin = __default_spin_policy>
+)w2c_template"
+R"w2c_template(// bool
+)w2c_template"
+R"w2c_template(// __atomic_spin(_Pred& __pred, _Spin __spin = _Spin{ }) noexcept
+)w2c_template"
+R"w2c_template(// {
+)w2c_template"
+R"w2c_template(// 	for (auto __i = 0; __i < __atomic_spin_count; ++__i)
+)w2c_template"
+R"w2c_template(// 	  {
+)w2c_template"
+R"w2c_template(// 	    if (__pred())
+)w2c_template"
+R"w2c_template(// 	      return true;
+)w2c_template"
+R"w2c_template(
+// 	    if (__i < __atomic_spin_count_relax)
+)w2c_template"
+R"w2c_template(// 	      __detail::__thread_relax();
+)w2c_template"
+R"w2c_template(// 	    else
+)w2c_template"
+R"w2c_template(// 	      __detail::__thread_yield();
+)w2c_template"
+R"w2c_template(// 	  }
+)w2c_template"
+R"w2c_template(
+// 	while (__spin())
+)w2c_template"
+R"w2c_template(// 	  {
+)w2c_template"
+R"w2c_template(// 	    if (__pred())
+)w2c_template"
+R"w2c_template(// 	      return true;
+)w2c_template"
+R"w2c_template(// 	  }
+)w2c_template"
+R"w2c_template(
+// 	return false;
+)w2c_template"
+R"w2c_template(// }
+)w2c_template"
+R"w2c_template(
+// https://github.com/ogiroux/atomic_wait
+)w2c_template"
+R"w2c_template(// https://stackoverflow.com/questions/62859596/difference-between-stdatomic-and-stdcondition-variable-wait-notify-method
+)w2c_template"
+R"w2c_template(//
+)w2c_template"
+R"w2c_template(
+// //boost 
+)w2c_template"
+R"w2c_template(
+//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
+)w2c_template"
+R"w2c_template(//     {
+)w2c_template"
+R"w2c_template(//         storage_type new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//         if (new_val == old_val)
+)w2c_template"
+R"w2c_template(//         {
+)w2c_template"
+R"w2c_template(//             scoped_wait_state wait_state(&storage);
+)w2c_template"
+R"w2c_template(//             new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//             while (new_val == old_val)
+)w2c_template"
+R"w2c_template(//             {
+)w2c_template"
+R"w2c_template(//                 wait_state.wait();
+)w2c_template"
+R"w2c_template(//                 new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//             }
+)w2c_template"
+R"w2c_template(//         }
+)w2c_template"
+R"w2c_template(
+//         return new_val;
+)w2c_template"
+R"w2c_template(//     }
+)w2c_template"
+R"w2c_template(
+//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
+)w2c_template"
+R"w2c_template(//     {
+)w2c_template"
+R"w2c_template(//         storage_type new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//         if (new_val == old_val)
+)w2c_template"
+R"w2c_template(//         {
+)w2c_template"
+R"w2c_template(//             for (unsigned int i = 0u; i < 16u; ++i)
+)w2c_template"
+R"w2c_template(//             {
+)w2c_template"
+R"w2c_template(//                 atomics::detail::pause();
+)w2c_template"
+R"w2c_template(//                 new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//                 if (new_val != old_val)
+)w2c_template"
+R"w2c_template(//                     goto finish;
+)w2c_template"
+R"w2c_template(//             }
+)w2c_template"
+R"w2c_template(
+//             do
+)w2c_template"
+R"w2c_template(//             {
+)w2c_template"
+R"w2c_template(//                 atomics::detail::wait_some();
+)w2c_template"
+R"w2c_template(//                 new_val = base_type::load(storage, order);
+)w2c_template"
+R"w2c_template(//             }
+)w2c_template"
+R"w2c_template(//             while (new_val == old_val);
+)w2c_template"
+R"w2c_template(//         }
+)w2c_template"
+R"w2c_template(
+//     finish:
+)w2c_template"
+R"w2c_template(//         return new_val;
+)w2c_template"
+R"w2c_template(//     }
+)w2c_template"
+R"w2c_template(
+// // C++ std
+)w2c_template"
+R"w2c_template(
+// template <class _Tp>
+)w2c_template"
+R"w2c_template(// __ABI void __cxx_atomic_wait(_Tp const* ptr, _Tp const val, int order) {
+)w2c_template"
+R"w2c_template(// #ifndef __NO_SPIN
+)w2c_template"
+R"w2c_template(//     if(__builtin_expect(__atomic_load_n(ptr, order) != val,1))
+)w2c_template"
+R"w2c_template(//         return;
+)w2c_template"
+R"w2c_template(//     for(int i = 0; i < 16; ++i) {
+)w2c_template"
+R"w2c_template(//         if(__atomic_load_n(ptr, order) != val)
+)w2c_template"
+R"w2c_template(//             return;
+)w2c_template"
+R"w2c_template(//         if(i < 12)
+)w2c_template"
+R"w2c_template(//             __YIELD_PROCESSOR();
+)w2c_template"
+R"w2c_template(//         else
+)w2c_template"
+R"w2c_template(//             __YIELD();
+)w2c_template"
+R"w2c_template(//     }
+)w2c_template"
+R"w2c_template(// #endif
+)w2c_template"
+R"w2c_template(//     while(val == __atomic_load_n(ptr, order))
+)w2c_template"
+R"w2c_template(// #ifndef __NO_WAIT
+)w2c_template"
+R"w2c_template(//         __cxx_atomic_try_wait_slow(ptr, val, order)
+)w2c_template"
+R"w2c_template(// #endif
+)w2c_template"
+R"w2c_template(//         ;
+)w2c_template"
+R"w2c_template(// }
+)w2c_template"
 ;
