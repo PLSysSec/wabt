@@ -1,3 +1,13 @@
+#include <errno.h>
+#include <limits.h>
+
+#ifndef _WIN32
+// POSIX system
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+
 #if defined(_MSC_VER)
 
 #include <intrin.h>
@@ -237,18 +247,168 @@ DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw16_cmpxchg_u, u64, u16);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
 
+static int futex(uint32_t* uaddr,
+                 int futex_op,
+                 uint32_t val,
+                 const struct timespec* timeout,
+                 uint32_t* uaddr2,
+                 uint32_t val3) {
+  return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+}
 
-static u32 memory_atomic_wait32(wasm_rt_memory_t* mem, u64 addr, u32 expected, s64 timeout) {
-  ATOMIC_ALIGNMENT_CHECK(addr, u32);
-  if (i32_atomic_load(mem, addr) != expected) {
-    return 1;
+#ifndef _WIN32
+
+// POSIX system
+
+// Helper for atomic wait. This implements an atomic wait
+// - operating on a 32-bit target (Linux kernel only supports this)
+// - has spurious wake ups
+// - returns 0 if valid or spurious wakeup, 2 if timedout
+static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
+                                     u64 addr,
+                                     u32 initial,
+                                     s64 timeout) {
+  // Linux futex only supports 32-bit
+  u32* futexp = (u32*)&mem->data[addr];
+
+  struct timespec futex_timeout;
+  struct timespec* chosen_futex_timeout = NULL;
+  if (timeout == 0) {
+    // Not sure what timeout = 0 means. It seems like we can timeout
+    // immediately.
+    return 2;  // timed out
+  } else if (timeout > 0) {
+    const u64 nano = (u64)1000000000;
+    futex_timeout.tv_sec = ((u64)timeout) / nano;
+    futex_timeout.tv_nsec = ((u64)timeout) % nano;
+    chosen_futex_timeout = &futex_timeout;
   }
 
+  long s =
+      futex(futexp, FUTEX_WAIT_PRIVATE, initial, chosen_futex_timeout, NULL, 0);
+
+  if (s == -1 && errno == ETIMEDOUT) {
+    return 2;  // timed out
+  }
+
+  // clang-format off
+  int is_valid_or_spurious_wakeup =
+      (s == 0)                     ||  // regular path or spurious wake up
+      (s == -1 && errno == EAGAIN) ||  // we already checked the initial value,
+                                       // any subsequent matching failure could
+                                       // be due to a notify
+      (s == -1 && errno == EINTR)  ;   // According to the man page, old linux
+                                       // kernels could have spurious interrupts
+                                       // with EINTR
+  // clang-format on
+
+  if (!is_valid_or_spurious_wakeup) {
+    abort();
+  }
 
   return 0;
 }
 
-static u32 memory_atomic_wait64(wasm_rt_memory_t* mem, u64 addr, u64 expected, s64 timeout) {
+static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u32 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  if (i32_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  do {
+    u32 ret = memory_atomic_wait_helper(mem, addr, initial, timeout);
+
+    if (ret != 0) {
+      return ret;
+    }
+
+    // check for spurious
+    if (i32_atomic_load(mem, addr) == initial) {
+      continue;
+    }
+
+    break;
+  } while (1);
+
+  return 0;
+}
+
+static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u64 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u64);
+  MEMCHECK(mem, addr, u64);
+
+  if (i64_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  do {
+    // memory_atomic_wait_helper only supports 32-bits target
+    const u32 initial32 = (u32)initial;
+    u64 ret = memory_atomic_wait_helper(mem, addr, initial32, timeout);
+
+    if (ret != 0) {
+      return ret;
+    }
+
+    // check for spurious
+    if (i64_atomic_load(mem, addr) == initial) {
+      continue;
+    }
+
+    break;
+  } while (1);
+
+  return 0;
+}
+
+static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  u32* futexp = (u32*)&mem->data[addr];
+
+  // linux futex can handle at most INT_MAX - 1, while INT_MAX wakes up all
+  // waiters
+  const unsigned int max_notify = ((unsigned int)INT_MAX) - 1;
+  u32 remaining_notify = count;
+  u32 ret = 0;
+
+  while (remaining_notify > 0) {
+    const u32 curr_notify =
+        remaining_notify <= max_notify ? remaining_notify : max_notify;
+
+    unsigned long woken_up = (unsigned long)futex(
+        futexp, FUTEX_WAKE_PRIVATE, (int)curr_notify, NULL, NULL, 0);
+    // We can only add values whose sum is less than or equal to the u32 count,
+    // so no checks needed
+    ret += (u32)woken_up;
+    remaining_notify -= curr_notify;
+  }
+
+  return ret;
+}
+
+#else
+
+static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u32 expected,
+                                s64 timeout) {
+  return 0;
+}
+
+static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u64 expected,
+                                s64 timeout) {
   return 0;
 }
 
@@ -256,120 +416,4 @@ static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
   return 0;
 }
 
-// // glib
-
-// inline void
-// __thread_yield() noexcept
-// {
-// #if defined _GLIBCXX_HAS_GTHREADS && defined _GLIBCXX_USE_SCHED_YIELD
-//   __gthread_yield();
-// #endif
-// }
-
-// inline void
-// __thread_relax() noexcept
-// {
-// #if defined __i386__ || defined __x86_64__
-//   __builtin_ia32_pause();
-// #else
-//   __thread_yield();
-// #endif
-// }
-
-//     constexpr auto __atomic_spin_count_1 = 12;
-//     constexpr auto __atomic_spin_count_2 = 4;
-
-// template<typename _Pred, typename _Spin = __default_spin_policy>
-// bool
-// __atomic_spin(_Pred& __pred, _Spin __spin = _Spin{ }) noexcept
-// {
-// 	for (auto __i = 0; __i < __atomic_spin_count; ++__i)
-// 	  {
-// 	    if (__pred())
-// 	      return true;
-
-// 	    if (__i < __atomic_spin_count_relax)
-// 	      __detail::__thread_relax();
-// 	    else
-// 	      __detail::__thread_yield();
-// 	  }
-
-// 	while (__spin())
-// 	  {
-// 	    if (__pred())
-// 	      return true;
-// 	  }
-
-// 	return false;
-// }
-
-// https://github.com/ogiroux/atomic_wait
-// https://stackoverflow.com/questions/62859596/difference-between-stdatomic-and-stdcondition-variable-wait-notify-method
-//
-
-// //boost 
-
-//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
-//     {
-//         storage_type new_val = base_type::load(storage, order);
-//         if (new_val == old_val)
-//         {
-//             scoped_wait_state wait_state(&storage);
-//             new_val = base_type::load(storage, order);
-//             while (new_val == old_val)
-//             {
-//                 wait_state.wait();
-//                 new_val = base_type::load(storage, order);
-//             }
-//         }
-
-//         return new_val;
-//     }
-
-//     static BOOST_FORCEINLINE storage_type wait(storage_type const volatile& storage, storage_type old_val, memory_order order) BOOST_NOEXCEPT
-//     {
-//         storage_type new_val = base_type::load(storage, order);
-//         if (new_val == old_val)
-//         {
-//             for (unsigned int i = 0u; i < 16u; ++i)
-//             {
-//                 atomics::detail::pause();
-//                 new_val = base_type::load(storage, order);
-//                 if (new_val != old_val)
-//                     goto finish;
-//             }
-
-//             do
-//             {
-//                 atomics::detail::wait_some();
-//                 new_val = base_type::load(storage, order);
-//             }
-//             while (new_val == old_val);
-//         }
-
-//     finish:
-//         return new_val;
-//     }
-
-// // C++ std
-
-// template <class _Tp>
-// __ABI void __cxx_atomic_wait(_Tp const* ptr, _Tp const val, int order) {
-// #ifndef __NO_SPIN
-//     if(__builtin_expect(__atomic_load_n(ptr, order) != val,1))
-//         return;
-//     for(int i = 0; i < 16; ++i) {
-//         if(__atomic_load_n(ptr, order) != val)
-//             return;
-//         if(i < 12)
-//             __YIELD_PROCESSOR();
-//         else
-//             __YIELD();
-//     }
-// #endif
-//     while(val == __atomic_load_n(ptr, order))
-// #ifndef __NO_WAIT
-//         __cxx_atomic_try_wait_slow(ptr, val, order)
-// #endif
-//         ;
-// }
+#endif

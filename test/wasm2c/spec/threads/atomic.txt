@@ -2,5 +2,5 @@
 ;;; ARGS*: --enable-threads
 ;;; STDIN_FILE: third_party/testsuite/proposals/threads/atomic.wast
 (;; STDOUT ;;;
-184/184 tests passed.
+187/187 tests passed.
 ;;; STDOUT ;;)
