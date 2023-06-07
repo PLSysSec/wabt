@@ -1,8 +1,9 @@
 #include <errno.h>
 #include <limits.h>
 
-#ifndef _WIN32
-// POSIX system
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -247,6 +248,172 @@ DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw16_cmpxchg_u, u64, u16);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
 
+#ifndef _WIN32
+
+typedef struct {
+  void* futex_addr;
+  HANDLE win_event;
+  w2c_memory_atomic_winwait_event* next;
+} w2c_memory_atomic_winwait_event;
+
+static w2c_memory_atomic_winwait_event* memory_atomic_add_wait_event(wasm_rt_atomics_info_t* atomics_info, void* futex_addr, HANDLE win_event) {
+  w2c_memory_atomic_winwait_event* evt = malloc(sizeof(w2c_memory_atomic_winwait_event));
+  evt->futex_addr = futex_addr;
+  evt->win_event = win_event;
+
+  w2c_memory_atomic_winwait_event* null_expected = NULL;
+  w2c_memory_atomic_winwait_event* prev = NULL;
+  w2c_memory_atomic_winwait_event* curr = (w2c_memory_atomic_winwait_event*) atomics_info->event_info;
+
+  do {
+
+    if (!curr) {
+      curr = atomic_compare_exchange_u64(curr, &null_expected, evt);
+      if (curr == NULL) {
+        // add succeeded
+        break;
+      }
+      // else there was an concurrent call to memory_atomic_add_wait_event
+      // continue iterating to the end of the list using the new curr
+    }
+
+    prev = curr;
+    curr = (w2c_memory_atomic_winwait_event*) atomic_load_u64(curr->next);
+  }
+
+  return evt;
+}
+
+static w2c_memory_atomic_winwait_event* memory_atomic_get_next_wait_event(wasm_rt_atomics_info_t* atomics_info, void* futex_addr, w2c_memory_atomic_winwait_event* prev) {
+
+  w2c_memory_atomic_winwait_event* curr = NULL;
+
+  if (prev == NULL) {
+    curr = (w2c_memory_atomic_winwait_event*) atomics_info->event_info;
+  } else {
+    curr = (w2c_memory_atomic_winwait_event*) atomic_load_u64(curr->next);
+  }
+
+  do {
+
+    if (!curr) {
+      // reached the end
+      break;
+    }
+
+    if (curr->futex_addr == futex_addr) {
+      break;
+    }
+
+    curr = (w2c_memory_atomic_winwait_event*) atomic_load_u64(curr->next);
+  } while (1);
+
+  return curr;
+}
+
+static void memory_atomic_remove_wait_event(wasm_rt_atomics_info_t* atomics_info, w2c_memory_atomic_winwait_event* evt) {
+  abort();
+}
+
+static u32 memory_atomic_wait_helper(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
+                                u64 addr,
+                                s64 timeout) {
+  void* futexp = (void*)&mem->data[addr];
+  DWORD win_timeout = INFINITE;
+  if (timeout == 0) {
+    // Not sure what timeout = 0 means. It seems like we can timeout
+    // immediately.
+    return 2;  // timed out
+  } else if (timeout > 0) {
+#define div_roundup(x, y)     q = x/y + (x % y != 0);
+    win_timeout = div_roundup(timeout, 1000000);
+#undef div_roundup
+  }
+
+  uint32_t prev_wait_instances = atomic_add_u32(atomics_info->wait_instances, 1);
+  if (prev_wait_instances == UINT32_MAX - 1) {
+    TRAP(MAX_WAITERS);
+  }
+
+  HANDLE win_evt = CreateEvent(NULL, TRUE /* reset after each signal */, FALSE /* is signalled initially */, NULL);
+  if (win_evt == NULL) {
+    abort();
+  }
+  w2c_memory_atomic_winwait_event* evt = memory_atomic_add_wait_event(atomics_info, futexp, &win_evt);
+
+  DWORD ret = WaitForSingleObject(win_evt, win_timeout);
+  memory_atomic_remove_wait_event(atomics_info, evt);
+  atomic_sub_u32(atomics_info->wait_instances, 1);
+
+  if (ret == WAIT_TIMEOUT) {
+    return 2;  // timed out
+  } else if (ret != WAIT_OBJECT_0) {
+    abort(); // some error occurred
+  }
+
+  return 0;
+}
+
+static u32 memory_atomic_wait32(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u32 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  if (i32_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  u32 ret = memory_atomic_wait_helper(atomics_info, mem, addr, timeout);
+  return ret;
+}
+
+static u64 memory_atomic_wait64(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u64 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u64);
+  MEMCHECK(mem, addr, u64);
+
+  if (i64_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  u32 ret = memory_atomic_wait_helper(atomics_info, mem, addr, timeout);
+  return ret;
+}
+
+
+static u32 memory_atomic_notify(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem, u64 addr, u32 count) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  u32* futexp = (u32*)&mem->data[addr];
+
+  u32 count = 0;
+  w2c_memory_atomic_winwait_event* curr = NULL;
+
+  do {
+    curr = memory_atomic_get_next_wait_event(atomics_info, futexp, curr);
+    if (!curr) {
+      break;
+    }
+    count++;
+
+    BOOL succeeded = SetEvent(curr->win_event);
+    if (!succeeded) {
+      abort();
+    }
+  } while(1);
+
+  return count;
+}
+
+#else
+
+// POSIX system
+
 static int futex(uint32_t* uaddr,
                  int futex_op,
                  uint32_t val,
@@ -256,15 +423,12 @@ static int futex(uint32_t* uaddr,
   return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
 }
 
-#ifndef _WIN32
-
-// POSIX system
-
 // Helper for atomic wait. This implements an atomic wait
 // - operating on a 32-bit target (Linux kernel only supports this)
 // - has spurious wake ups
 // - returns 0 if valid or spurious wakeup, 2 if timedout
-static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
+static u32 memory_atomic_wait_helper(wasm_rt_atomics_info_t* atomics_info, 
+                                     wasm_rt_memory_t* mem,
                                      u64 addr,
                                      u32 initial,
                                      s64 timeout) {
@@ -284,8 +448,14 @@ static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
     chosen_futex_timeout = &futex_timeout;
   }
 
+  uint32_t prev_wait_instances = atomic_add_u32(atomics_info->wait_instances, 1);
+  if (prev_wait_instances == UINT32_MAX - 1) {
+    TRAP(MAX_WAITERS);
+  }
+
   long s =
       futex(futexp, FUTEX_WAIT_PRIVATE, initial, chosen_futex_timeout, NULL, 0);
+  atomic_sub_u32(atomics_info->wait_instances, 1);
 
   if (s == -1 && errno == ETIMEDOUT) {
     return 2;  // timed out
@@ -309,7 +479,7 @@ static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
   return 0;
 }
 
-static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
+static u32 memory_atomic_wait32(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
                                 u64 addr,
                                 u32 initial,
                                 s64 timeout) {
@@ -321,7 +491,7 @@ static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
   }
 
   do {
-    u32 ret = memory_atomic_wait_helper(mem, addr, initial, timeout);
+    u32 ret = memory_atomic_wait_helper(atomics_info, mem, addr, initial, timeout);
 
     if (ret != 0) {
       return ret;
@@ -338,7 +508,7 @@ static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
   return 0;
 }
 
-static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
+static u32 memory_atomic_wait64(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
                                 u64 addr,
                                 u64 initial,
                                 s64 timeout) {
@@ -352,7 +522,7 @@ static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
   do {
     // memory_atomic_wait_helper only supports 32-bits target
     const u32 initial32 = (u32)initial;
-    u64 ret = memory_atomic_wait_helper(mem, addr, initial32, timeout);
+    u64 ret = memory_atomic_wait_helper(atomics_info, mem, addr, initial32, timeout);
 
     if (ret != 0) {
       return ret;
@@ -369,7 +539,7 @@ static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
   return 0;
 }
 
-static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+static u32 memory_atomic_notify(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem, u64 addr, u32 count) {
   ATOMIC_ALIGNMENT_CHECK(addr, u32);
   MEMCHECK(mem, addr, u32);
 
@@ -394,26 +564,6 @@ static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
   }
 
   return ret;
-}
-
-#else
-
-static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
-                                u64 addr,
-                                u32 expected,
-                                s64 timeout) {
-  return 0;
-}
-
-static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
-                                u64 addr,
-                                u64 expected,
-                                s64 timeout) {
-  return 0;
-}
-
-static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
-  return 0;
 }
 
 #endif

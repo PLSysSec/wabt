@@ -1862,6 +1862,9 @@ void CWriter::WriteV128Decl() {
 
 void CWriter::WriteModuleInstance() {
   BeginInstance();
+  if(module_->features_used.threads) {
+    Write("wasm_rt_atomics_info_t atomics_info;", Newline());
+  }
   WriteGlobals();
   WriteMemories();
   WriteTables();
@@ -1870,7 +1873,7 @@ void CWriter::WriteModuleInstance() {
 
   // C forbids an empty struct
   if (module_->globals.empty() && module_->memories.empty() &&
-      module_->tables.empty() && import_func_module_set_.empty()) {
+      module_->tables.empty() && import_func_module_set_.empty() && !module_->features_used.threads) {
     Write("char dummy_member;", Newline());
   }
 
@@ -5372,7 +5375,7 @@ void CWriter::Write(const AtomicWaitExpr& expr) {
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
   Type result_type = expr.opcode.GetResultType();
 
-  Write(StackVar(2, result_type), " = ", func, "(",
+  Write(StackVar(2, result_type), " = ", func, "(instance->atomics_info, ",
         ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", (u64)(",
         StackVar(2), ")");
   if (expr.offset != 0)
@@ -5386,7 +5389,7 @@ void CWriter::Write(const AtomicNotifyExpr& expr) {
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
   Type result_type = expr.opcode.GetResultType();
 
-  Write(StackVar(1, result_type), " = memory_atomic_notify(",
+  Write(StackVar(1, result_type), " = memory_atomic_notify(instance->atomics_info, ",
         ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", (u64)(",
         StackVar(1), ")");
   if (expr.offset != 0)

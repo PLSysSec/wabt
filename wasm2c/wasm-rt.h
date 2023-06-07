@@ -219,6 +219,7 @@ typedef enum {
   WASM_RT_TRAP_CALL_INDIRECT,      /** Invalid call_indirect, for any reason. */
   WASM_RT_TRAP_UNCAUGHT_EXCEPTION, /* Exception thrown and not caught. */
   WASM_RT_TRAP_UNALIGNED, /** Unaligned atomic instruction executed. */
+  WASM_RT_TRAP_MAX_WAITERS, /** Reached the maximum number of wait objects. */
 #if WASM_RT_MERGED_OOB_AND_EXHAUSTION_TRAPS
   WASM_RT_TRAP_EXHAUSTION = WASM_RT_TRAP_OOB,
 #else
@@ -308,6 +309,15 @@ typedef struct {
   /** The current element count of the table. */
   uint32_t size;
 } wasm_rt_externref_table_t;
+
+typedef struct {
+  /** total number of instances that are waiting on a notify. */
+  uint32_t wait_instances;
+#ifdef _WIN32
+  /** store the windows structures that allow futex style operations */
+  void* event_info;
+#endif
+} wasm_rt_atomics_info_t;
 
 /** Initialize the runtime. */
 void wasm_rt_init(void);
