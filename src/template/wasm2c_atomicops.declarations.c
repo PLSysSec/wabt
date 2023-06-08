@@ -21,10 +21,10 @@
 // or if we have to reuse other instrinsics
 // https://stackoverflow.com/questions/42660091/atomic-load-in-c-with-msvc
 // We reuse other intrinsics to be cautious
-#define atomic_load_u8(a, v) _InterlockedOr8(a, 0)
-#define atomic_load_u16(a, v) _InterlockedOr16(a, 0)
-#define atomic_load_u32(a, v) _InterlockedOr(a, 0)
-#define atomic_load_u64(a, v) _InterlockedOr64(a, 0)
+#define atomic_load_u8(a) _InterlockedOr8(a, 0)
+#define atomic_load_u16(a) _InterlockedOr16(a, 0)
+#define atomic_load_u32(a) _InterlockedOr(a, 0)
+#define atomic_load_u64(a) _InterlockedOr64(a, 0)
 
 #define atomic_store_u8(a, v) _InterlockedExchange8(a, v)
 #define atomic_store_u16(a, v) _InterlockedExchange16(a, v)
@@ -248,7 +248,7 @@ DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw16_cmpxchg_u, u64, u16);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
 
-#ifndef _WIN32
+#ifdef _WIN32
 
 typedef struct {
   void* futex_addr;
@@ -279,7 +279,7 @@ static w2c_memory_atomic_winwait_event* memory_atomic_add_wait_event(wasm_rt_ato
 
     prev = curr;
     curr = (w2c_memory_atomic_winwait_event*) atomic_load_u64(curr->next);
-  }
+  } while(1);
 
   return evt;
 }
@@ -342,6 +342,7 @@ static u32 memory_atomic_wait_helper(wasm_rt_atomics_info_t* atomics_info, wasm_
   w2c_memory_atomic_winwait_event* evt = memory_atomic_add_wait_event(atomics_info, futexp, &win_evt);
 
   DWORD ret = WaitForSingleObject(win_evt, win_timeout);
+
   memory_atomic_remove_wait_event(atomics_info, evt);
   atomic_sub_u32(atomics_info->wait_instances, 1);
 
