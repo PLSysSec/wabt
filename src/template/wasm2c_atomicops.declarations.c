@@ -302,8 +302,11 @@ static w2c_memory_atomic_winwait_event* memory_atomic_get_next_wait_event(wasm_r
     }
 
     if (curr->futex_addr == futex_addr) {
+      // found the value
       break;
     }
+
+    // not found, go to the next element
 
     curr = (w2c_memory_atomic_winwait_event*) atomic_load_u64(curr->next);
   } while (1);
