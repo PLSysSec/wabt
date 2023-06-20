@@ -1862,7 +1862,7 @@ void CWriter::WriteV128Decl() {
 
 void CWriter::WriteModuleInstance() {
   BeginInstance();
-  if(module_->features_used.threads) {
+  if(module_->features_used.threads_wait_notify) {
     Write("wasm_rt_atomics_info_t atomics_info;", Newline());
   }
   WriteGlobals();
@@ -2437,6 +2437,9 @@ void CWriter::WriteInit() {
   if (!module_->memories.empty() && !module_->data_segments.empty()) {
     Write("init_data_instances(instance);", Newline());
   }
+  if (module_->features_used.threads_wait_notify) {
+    Write("instance->atomics_info = wasm_rt_initialize_wait_notify();", Newline());
+  }
 
   for (Var* var : module_->starts) {
     Write(ExternalRef(ModuleFieldType::Func, module_->GetFunc(*var)->name));
@@ -2603,6 +2606,10 @@ void CWriter::WriteFree() {
       }
       ++memory_index;
     }
+  }
+
+  if (module_->features_used.threads_wait_notify) {
+    Write("wasm_rt_cleanup_wait_notify(instance->atomics_info);", Newline());
   }
 
   Write(CloseBrace(), Newline());

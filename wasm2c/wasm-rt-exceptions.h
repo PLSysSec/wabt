@@ -17,6 +17,10 @@
 #ifndef WASM_RT_EXCEPTIONS_H_
 #define WASM_RT_EXCEPTIONS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "wasm-rt.h"
 
 /**
@@ -65,5 +69,9 @@ uint32_t wasm_rt_exception_size(void);
  * Contents of the active exception.
  */
 void* wasm_rt_exception(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

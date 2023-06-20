@@ -313,10 +313,8 @@ typedef struct {
 typedef struct {
   /** total number of instances that are waiting on a notify. */
   uint32_t wait_instances;
-#ifdef _WIN32
-  /** store the windows structures that allow futex style operations */
-  void* event_info;
-#endif
+  /** Allow the runtime to store structures required for futex-based wait/notify operations */
+  void* wait_notify_info;
 } wasm_rt_atomics_info_t;
 
 /** Initialize the runtime. */

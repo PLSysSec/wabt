@@ -19,7 +19,13 @@ project(WABT LANGUAGES C CXX VERSION 1.0.33)
 
 include(GNUInstallDirs)
 
+option(BUILD_WASM2C_THREAD_WAIT_NOTIFY "Include wasm2c runtime support for wasm2c's thread wait/notify API (Requires C++ 20)." ON)
+
+if (BUILD_WASM2C_THREAD_WAIT_NOTIFY)
+set(CMAKE_CXX_STANDARD 20)
+else()
 set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -422,6 +428,9 @@ if (WABT_INSTALL_RULES)
 endif ()
 
 set(WASM_RT_FILES "wasm2c/wasm-rt-impl.h" "wasm2c/wasm-rt-impl.c" "wasm2c/wasm-rt-exceptions-impl.c")
+if (BUILD_WASM2C_THREAD_WAIT_NOTIFY)
+  set(WASM_RT_FILES ${WASM_RT_FILES} "wasm2c/wasm-rt-threads.cpp")
+endif()
 
 add_library(wasm-rt-impl STATIC ${WASM_RT_FILES})
 add_library(wabt::wasm-rt-impl ALIAS wasm-rt-impl)

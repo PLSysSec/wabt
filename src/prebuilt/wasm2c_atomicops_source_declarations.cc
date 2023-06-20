@@ -1,11 +1,16 @@
-const char* s_atomicops_source_declarations = R"w2c_template(#include <errno.h>
+const char* s_atomicops_source_declarations = R"w2c_template(#include "wasm-rt-threads.h"
+)w2c_template"
+R"w2c_template(
+#include <errno.h>
 )w2c_template"
 R"w2c_template(#include <limits.h>
 )w2c_template"
 R"w2c_template(
-#ifndef _WIN32
+#ifdef _WIN32
 )w2c_template"
-R"w2c_template(// POSIX system
+R"w2c_template(#include <windows.h>
+)w2c_template"
+R"w2c_template(#else
 )w2c_template"
 R"w2c_template(#include <linux/futex.h>
 )w2c_template"
@@ -37,13 +42,13 @@ R"w2c_template(// https://stackoverflow.com/questions/42660091/atomic-load-in-c-
 )w2c_template"
 R"w2c_template(// We reuse other intrinsics to be cautious
 )w2c_template"
-R"w2c_template(#define atomic_load_u8(a, v) _InterlockedOr8(a, 0)
+R"w2c_template(#define atomic_load_u8(a) _InterlockedOr8(a, 0)
 )w2c_template"
-R"w2c_template(#define atomic_load_u16(a, v) _InterlockedOr16(a, 0)
+R"w2c_template(#define atomic_load_u16(a) _InterlockedOr16(a, 0)
 )w2c_template"
-R"w2c_template(#define atomic_load_u32(a, v) _InterlockedOr(a, 0)
+R"w2c_template(#define atomic_load_u32(a) _InterlockedOr(a, 0)
 )w2c_template"
-R"w2c_template(#define atomic_load_u64(a, v) _InterlockedOr64(a, 0)
+R"w2c_template(#define atomic_load_u64(a) _InterlockedOr64(a, 0)
 )w2c_template"
 R"w2c_template(
 #define atomic_store_u8(a, v) _InterlockedExchange8(a, v)
@@ -454,121 +459,30 @@ R"w2c_template(DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 R"w2c_template(DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
 )w2c_template"
 R"w2c_template(
-static int futex(uint32_t* uaddr,
+static u32 memory_atomic_wait_helper(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
 )w2c_template"
-R"w2c_template(                 int futex_op,
+R"w2c_template(                                u64 addr,
 )w2c_template"
-R"w2c_template(                 uint32_t val,
+R"w2c_template(                                s64 timeout) {
 )w2c_template"
-R"w2c_template(                 const struct timespec* timeout,
+R"w2c_template(
+  uint32_t prev_wait_instances = atomic_add_u32(atomics_info->wait_instances, 1);
 )w2c_template"
-R"w2c_template(                 uint32_t* uaddr2,
+R"w2c_template(  if (prev_wait_instances == UINT32_MAX - 1) {
 )w2c_template"
-R"w2c_template(                 uint32_t val3) {
+R"w2c_template(    TRAP(MAX_WAITERS);
 )w2c_template"
-R"w2c_template(  return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(
+  uint32_t ret = wasm_rt_wait_on_address(atomics_info->wait_notify_info, &mem->data[addr], timeout);
+)w2c_template"
+R"w2c_template(  return ret;
 )w2c_template"
 R"w2c_template(}
 )w2c_template"
 R"w2c_template(
-#ifndef _WIN32
-)w2c_template"
-R"w2c_template(
-// POSIX system
-)w2c_template"
-R"w2c_template(
-// Helper for atomic wait. This implements an atomic wait
-)w2c_template"
-R"w2c_template(// - operating on a 32-bit target (Linux kernel only supports this)
-)w2c_template"
-R"w2c_template(// - has spurious wake ups
-)w2c_template"
-R"w2c_template(// - returns 0 if valid or spurious wakeup, 2 if timedout
-)w2c_template"
-R"w2c_template(static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
-)w2c_template"
-R"w2c_template(                                     u64 addr,
-)w2c_template"
-R"w2c_template(                                     u32 initial,
-)w2c_template"
-R"w2c_template(                                     s64 timeout) {
-)w2c_template"
-R"w2c_template(  // Linux futex only supports 32-bit
-)w2c_template"
-R"w2c_template(  u32* futexp = (u32*)&mem->data[addr];
-)w2c_template"
-R"w2c_template(
-  struct timespec futex_timeout;
-)w2c_template"
-R"w2c_template(  struct timespec* chosen_futex_timeout = NULL;
-)w2c_template"
-R"w2c_template(  if (timeout == 0) {
-)w2c_template"
-R"w2c_template(    // Not sure what timeout = 0 means. It seems like we can timeout
-)w2c_template"
-R"w2c_template(    // immediately.
-)w2c_template"
-R"w2c_template(    return 2;  // timed out
-)w2c_template"
-R"w2c_template(  } else if (timeout > 0) {
-)w2c_template"
-R"w2c_template(    const u64 nano = (u64)1000000000;
-)w2c_template"
-R"w2c_template(    futex_timeout.tv_sec = ((u64)timeout) / nano;
-)w2c_template"
-R"w2c_template(    futex_timeout.tv_nsec = ((u64)timeout) % nano;
-)w2c_template"
-R"w2c_template(    chosen_futex_timeout = &futex_timeout;
-)w2c_template"
-R"w2c_template(  }
-)w2c_template"
-R"w2c_template(
-  long s =
-)w2c_template"
-R"w2c_template(      futex(futexp, FUTEX_WAIT_PRIVATE, initial, chosen_futex_timeout, NULL, 0);
-)w2c_template"
-R"w2c_template(
-  if (s == -1 && errno == ETIMEDOUT) {
-)w2c_template"
-R"w2c_template(    return 2;  // timed out
-)w2c_template"
-R"w2c_template(  }
-)w2c_template"
-R"w2c_template(
-  // clang-format off
-)w2c_template"
-R"w2c_template(  int is_valid_or_spurious_wakeup =
-)w2c_template"
-R"w2c_template(      (s == 0)                     ||  // regular path or spurious wake up
-)w2c_template"
-R"w2c_template(      (s == -1 && errno == EAGAIN) ||  // we already checked the initial value,
-)w2c_template"
-R"w2c_template(                                       // any subsequent matching failure could
-)w2c_template"
-R"w2c_template(                                       // be due to a notify
-)w2c_template"
-R"w2c_template(      (s == -1 && errno == EINTR)  ;   // According to the man page, old linux
-)w2c_template"
-R"w2c_template(                                       // kernels could have spurious interrupts
-)w2c_template"
-R"w2c_template(                                       // with EINTR
-)w2c_template"
-R"w2c_template(  // clang-format on
-)w2c_template"
-R"w2c_template(
-  if (!is_valid_or_spurious_wakeup) {
-)w2c_template"
-R"w2c_template(    abort();
-)w2c_template"
-R"w2c_template(  }
-)w2c_template"
-R"w2c_template(
-  return 0;
-)w2c_template"
-R"w2c_template(}
-)w2c_template"
-R"w2c_template(
-static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
+static u32 memory_atomic_wait32(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
 )w2c_template"
 R"w2c_template(                                u64 addr,
 )w2c_template"
@@ -588,38 +502,12 @@ R"w2c_template(    return 1;  // initial value did not match
 R"w2c_template(  }
 )w2c_template"
 R"w2c_template(
-  do {
-)w2c_template"
-R"w2c_template(    u32 ret = memory_atomic_wait_helper(mem, addr, initial, timeout);
-)w2c_template"
-R"w2c_template(
-    if (ret != 0) {
-)w2c_template"
-R"w2c_template(      return ret;
-)w2c_template"
-R"w2c_template(    }
-)w2c_template"
-R"w2c_template(
-    // check for spurious
-)w2c_template"
-R"w2c_template(    if (i32_atomic_load(mem, addr) == initial) {
-)w2c_template"
-R"w2c_template(      continue;
-)w2c_template"
-R"w2c_template(    }
-)w2c_template"
-R"w2c_template(
-    break;
-)w2c_template"
-R"w2c_template(  } while (1);
-)w2c_template"
-R"w2c_template(
-  return 0;
+  return memory_atomic_wait_helper(atomics_info, mem, addr, timeout);
 )w2c_template"
 R"w2c_template(}
 )w2c_template"
 R"w2c_template(
-static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
+static u32 memory_atomic_wait64(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem,
 )w2c_template"
 R"w2c_template(                                u64 addr,
 )w2c_template"
@@ -632,132 +520,30 @@ R"w2c_template(  ATOMIC_ALIGNMENT_CHECK(addr, u64);
 R"w2c_template(  MEMCHECK(mem, addr, u64);
 )w2c_template"
 R"w2c_template(
-  if (i64_atomic_load(mem, addr) != initial) {
+  if (i32_atomic_load(mem, addr) != initial) {
 )w2c_template"
 R"w2c_template(    return 1;  // initial value did not match
 )w2c_template"
 R"w2c_template(  }
 )w2c_template"
 R"w2c_template(
-  do {
-)w2c_template"
-R"w2c_template(    // memory_atomic_wait_helper only supports 32-bits target
-)w2c_template"
-R"w2c_template(    const u32 initial32 = (u32)initial;
-)w2c_template"
-R"w2c_template(    u64 ret = memory_atomic_wait_helper(mem, addr, initial32, timeout);
-)w2c_template"
-R"w2c_template(
-    if (ret != 0) {
-)w2c_template"
-R"w2c_template(      return ret;
-)w2c_template"
-R"w2c_template(    }
-)w2c_template"
-R"w2c_template(
-    // check for spurious
-)w2c_template"
-R"w2c_template(    if (i64_atomic_load(mem, addr) == initial) {
-)w2c_template"
-R"w2c_template(      continue;
-)w2c_template"
-R"w2c_template(    }
-)w2c_template"
-R"w2c_template(
-    break;
-)w2c_template"
-R"w2c_template(  } while (1);
-)w2c_template"
-R"w2c_template(
-  return 0;
+  return memory_atomic_wait_helper(atomics_info, mem, addr, timeout);
 )w2c_template"
 R"w2c_template(}
 )w2c_template"
 R"w2c_template(
-static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+static u32 memory_atomic_notify(wasm_rt_atomics_info_t* atomics_info, wasm_rt_memory_t* mem, u64 addr, u32 count) {
 )w2c_template"
 R"w2c_template(  ATOMIC_ALIGNMENT_CHECK(addr, u32);
 )w2c_template"
 R"w2c_template(  MEMCHECK(mem, addr, u32);
 )w2c_template"
 R"w2c_template(
-  u32* futexp = (u32*)&mem->data[addr];
+  uint32_t ret = wasm_rt_notify_at_address(atomics_info->wait_notify_info, , &mem->data[addr], count);
 )w2c_template"
-R"w2c_template(
-  // linux futex can handle at most INT_MAX - 1, while INT_MAX wakes up all
-)w2c_template"
-R"w2c_template(  // waiters
-)w2c_template"
-R"w2c_template(  const unsigned int max_notify = ((unsigned int)INT_MAX) - 1;
-)w2c_template"
-R"w2c_template(  u32 remaining_notify = count;
-)w2c_template"
-R"w2c_template(  u32 ret = 0;
-)w2c_template"
-R"w2c_template(
-  while (remaining_notify > 0) {
-)w2c_template"
-R"w2c_template(    const u32 curr_notify =
-)w2c_template"
-R"w2c_template(        remaining_notify <= max_notify ? remaining_notify : max_notify;
-)w2c_template"
-R"w2c_template(
-    unsigned long woken_up = (unsigned long)futex(
-)w2c_template"
-R"w2c_template(        futexp, FUTEX_WAKE_PRIVATE, (int)curr_notify, NULL, NULL, 0);
-)w2c_template"
-R"w2c_template(    // We can only add values whose sum is less than or equal to the u32 count,
-)w2c_template"
-R"w2c_template(    // so no checks needed
-)w2c_template"
-R"w2c_template(    ret += (u32)woken_up;
-)w2c_template"
-R"w2c_template(    remaining_notify -= curr_notify;
-)w2c_template"
-R"w2c_template(  }
-)w2c_template"
-R"w2c_template(
-  return ret;
+R"w2c_template(  return ret;
 )w2c_template"
 R"w2c_template(}
 )w2c_template"
-R"w2c_template(
-#else
-)w2c_template"
-R"w2c_template(
-static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
-)w2c_template"
-R"w2c_template(                                u64 addr,
-)w2c_template"
-R"w2c_template(                                u32 expected,
-)w2c_template"
-R"w2c_template(                                s64 timeout) {
-)w2c_template"
-R"w2c_template(  return 0;
-)w2c_template"
-R"w2c_template(}
-)w2c_template"
-R"w2c_template(
-static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
-)w2c_template"
-R"w2c_template(                                u64 addr,
-)w2c_template"
-R"w2c_template(                                u64 expected,
-)w2c_template"
-R"w2c_template(                                s64 timeout) {
-)w2c_template"
-R"w2c_template(  return 0;
-)w2c_template"
-R"w2c_template(}
-)w2c_template"
-R"w2c_template(
-static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
-)w2c_template"
-R"w2c_template(  return 0;
-)w2c_template"
-R"w2c_template(}
-)w2c_template"
-R"w2c_template(
-#endif
-)w2c_template"
+
 ;
