@@ -489,7 +489,7 @@ void NameResolver::VisitFunc(Func* func) {
   }
 
   func->bindings.FindDuplicates(
-      [=](const BindingHash::value_type& a, const BindingHash::value_type& b) {
+      [=, this](const BindingHash::value_type& a, const BindingHash::value_type& b) {
         const char* desc =
             (a.second.index < func->GetNumParams()) ? "parameter" : "local";
         PrintDuplicateBindingsError(a, b, desc);
