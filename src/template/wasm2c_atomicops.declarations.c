@@ -1,3 +1,5 @@
+#include "wasm-rt-threads.h"
+
 #if defined(_MSC_VER)
 
 #include <intrin.h>
@@ -10,10 +12,10 @@
 // or if we have to reuse other instrinsics
 // https://stackoverflow.com/questions/42660091/atomic-load-in-c-with-msvc
 // We reuse other intrinsics to be cautious
-#define atomic_load_u8(a, v) _InterlockedOr8(a, 0)
-#define atomic_load_u16(a, v) _InterlockedOr16(a, 0)
-#define atomic_load_u32(a, v) _InterlockedOr(a, 0)
-#define atomic_load_u64(a, v) _InterlockedOr64(a, 0)
+#define atomic_load_u8(a) _InterlockedOr8(a, 0)
+#define atomic_load_u16(a) _InterlockedOr16(a, 0)
+#define atomic_load_u32(a) _InterlockedOr(a, 0)
+#define atomic_load_u64(a) _InterlockedOr64(a, 0)
 
 #define atomic_store_u8(a, v) _InterlockedExchange8(a, v)
 #define atomic_store_u16(a, v) _InterlockedExchange16(a, v)
@@ -236,3 +238,55 @@ DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw8_cmpxchg_u, u64, u8);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw16_cmpxchg_u, u64, u16);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw32_cmpxchg_u, u64, u32);
 DEFINE_ATOMIC_CMP_XCHG(i64_atomic_rmw_cmpxchg, u64, u64);
+
+/** total number of instances that are waiting on a notify. */
+static uint32_t wait_instances = 0;
+
+static u32 memory_atomic_wait_helper(wasm_rt_memory_t* mem,
+                                     u64 addr,
+                                     s64 timeout) {
+  uint32_t prev_wait_instances = atomic_add_u32(&wait_instances, 1);
+  if (prev_wait_instances == UINT32_MAX - 1) {
+    TRAP(MAX_WAITERS);
+  }
+
+  uint32_t ret = wasm_rt_wait_on_address((uintptr_t) &mem->data[addr], timeout);
+  atomic_sub_u32(&wait_instances, 1);
+  return ret;
+}
+
+static u32 memory_atomic_wait32(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u32 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  if (i32_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  return memory_atomic_wait_helper(mem, addr, timeout);
+}
+
+static u32 memory_atomic_wait64(wasm_rt_memory_t* mem,
+                                u64 addr,
+                                u64 initial,
+                                s64 timeout) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u64);
+  MEMCHECK(mem, addr, u64);
+
+  if (i32_atomic_load(mem, addr) != initial) {
+    return 1;  // initial value did not match
+  }
+
+  return memory_atomic_wait_helper(mem, addr, timeout);
+}
+
+static u32 memory_atomic_notify(wasm_rt_memory_t* mem, u64 addr, u32 count) {
+  ATOMIC_ALIGNMENT_CHECK(addr, u32);
+  MEMCHECK(mem, addr, u32);
+
+  uint32_t ret = wasm_rt_notify_at_address((uintptr_t) &mem->data[addr], count);
+  return ret;
+}

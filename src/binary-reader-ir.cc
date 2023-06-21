@@ -828,6 +828,7 @@ Result BinaryReaderIR::OnAtomicWaitExpr(Opcode opcode,
                                         Index memidx,
                                         Address alignment_log2,
                                         Address offset) {
+  module_->features_used.threads_wait_notify = true;
   return AppendExpr(std::make_unique<AtomicWaitExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }
@@ -840,6 +841,7 @@ Result BinaryReaderIR::OnAtomicNotifyExpr(Opcode opcode,
                                           Index memidx,
                                           Address alignment_log2,
                                           Address offset) {
+  module_->features_used.threads_wait_notify = true;
   return AppendExpr(std::make_unique<AtomicNotifyExpr>(
       opcode, Var(memidx, GetLocation()), 1 << alignment_log2, offset));
 }

@@ -444,7 +444,7 @@ class CWriter(object):
             raise Error('Unexpected action type: %s' % type_)
 
 
-def Compile(cc, c_filename, out_dir, *cflags):
+def Compile(cc, cxx, is_c, c_filename, out_dir, *cflags):
     if IS_WINDOWS:
         ext = '.obj'
     else:
@@ -465,7 +465,11 @@ def Compile(cc, c_filename, out_dir, *cflags):
                  '-Wno-infinite-recursion',
                  '-fno-optimize-sibling-calls',
                  '-frounding-math', '-fsignaling-nans',
-                 '-std=c99', '-D_DEFAULT_SOURCE']
+                 '-D_DEFAULT_SOURCE']
+        if is_c:
+            args += ['-std=c99']
+        else:
+            args += ['-std=c++20']
     # Use RunWithArgsForStdout and discard stdout because cl.exe
     # unconditionally prints the name of input files on stdout
     # and we don't want that to be part of our stdout.
@@ -490,9 +494,12 @@ def Link(cc, o_filenames, main_exe, *extra_args):
 
 def main(args):
     default_compiler = 'cc'
+    default_cxx_compiler = 'c++'
     if IS_WINDOWS:
         default_compiler = 'cl.exe'
+        default_cxx_compiler = 'cl.exe'
     default_compiler = os.getenv('WASM2C_CC', os.getenv('CC', default_compiler))
+    default_cxx_compiler = os.getenv('WASM2C_CXX', os.getenv('CXX', default_cxx_compiler))
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--out-dir', metavar='PATH',
                         help='output directory for files.')
@@ -510,6 +517,12 @@ def main(args):
                         default=default_compiler)
     parser.add_argument('--cflags', metavar='FLAGS',
                         help='additional flags for C compiler.',
+                        action='append', default=[])
+    parser.add_argument('--cxx', metavar='PATH',
+                        help='the path to the C++ compiler',
+                        default=default_cxx_compiler)
+    parser.add_argument('--cxxflags', metavar='CXXFLAGS',
+                        help='additional flags for C++ compiler.',
                         action='append', default=[])
     parser.add_argument('--compile', help='compile the C code (default)',
                         dest='compile', action='store_true')
@@ -578,6 +591,11 @@ def main(args):
                               forward_stdout=False)
         cc.verbose = options.print_cmd
 
+        options.cxxflags += shlex.split(os.environ.get('WASM2C_CXXFLAGS', ''))
+        cxx = utils.Executable(options.cxx, *options.cxxflags, forward_stderr=True,
+                              forward_stdout=False)
+        cxx.verbose = options.print_cmd
+
         with open(json_file_path, encoding='utf-8') as json_file:
             spec_json = json.load(json_file)
 
@@ -597,6 +615,8 @@ def main(args):
                 return SKIPPED
             cflags.append('-DSUPPORT_MEMORY64=1')
 
+        cxxflags = cflags
+
         for i, wasm_filename in enumerate(cwriter.GetModuleFilenames()):
             wasm_filename = os.path.join(out_dir, wasm_filename)
             c_filename_input = utils.ChangeExt(wasm_filename, '.c')
@@ -611,7 +631,7 @@ def main(args):
             wasm2c.RunWithArgs(wasm_filename, '-o', c_filename_input, *args)
             if options.compile:
                 for j, c_filename in enumerate(c_filenames):
-                    o_filenames.append(Compile(cc, c_filename, out_dir, *cflags))
+                    o_filenames.append(Compile(cc, cxx, True, c_filename, out_dir, *cflags))
 
         cwriter.Write()
         main_filename = utils.ChangeExt(json_file_path, '-main.c')
@@ -621,14 +641,18 @@ def main(args):
         if options.compile:
             # Compile wasm-rt-impl.
             wasm_rt_impl_c = os.path.join(options.wasmrt_dir, 'wasm-rt-impl.c')
-            o_filenames.append(Compile(cc, wasm_rt_impl_c, out_dir, *cflags))
+            o_filenames.append(Compile(cc, cxx, True, wasm_rt_impl_c, out_dir, *cflags))
 
             # Compile wasm-rt-exceptions.
             wasm_rt_exceptions_c = os.path.join(options.wasmrt_dir, 'wasm-rt-exceptions-impl.c')
-            o_filenames.append(Compile(cc, wasm_rt_exceptions_c, out_dir, *cflags))
+            o_filenames.append(Compile(cc, cxx, True, wasm_rt_exceptions_c, out_dir, *cflags))
+
+            # Compile wasm-rt-threads.
+            wasm_rt_threads_cpp = os.path.join(options.wasmrt_dir, 'wasm-rt-threads-impl.cpp')
+            o_filenames.append(Compile(cc, cxx, False, wasm_rt_threads_cpp, out_dir, *cxxflags))
 
             # Compile and link -main test run entry point
-            o_filenames.append(Compile(cc, main_filename, out_dir, *cflags))
+            o_filenames.append(Compile(cc, cxx, True, main_filename, out_dir, *cflags))
             if IS_WINDOWS:
                 exe_ext = '.exe'
                 libs = []
@@ -636,7 +660,7 @@ def main(args):
                 exe_ext = ''
                 libs = ['-lm']
             main_exe = utils.ChangeExt(json_file_path, exe_ext)
-            Link(cc, o_filenames, main_exe, *libs)
+            Link(cxx, o_filenames, main_exe, *libs)
 
             # Run the resulting binary
             if options.run:
