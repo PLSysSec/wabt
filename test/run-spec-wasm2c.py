@@ -160,7 +160,7 @@ class CWriter(object):
             if command['type'] == 'module':
                 if test_function_num != 0:
                     self.out_file.write('\nreturn 0;\n}\n')
-                self.out_file.write('\nint run_spec_tests_%d(void* unused) {\n\n(void) unused;\n' % test_function_num)
+                self.out_file.write('\nTHREAD_FUNC_RET run_spec_tests_%d(void* unused) {\n\n(void) unused;\n' % test_function_num)
                 test_function_num += 1
             self._WriteCommand(command)
 
