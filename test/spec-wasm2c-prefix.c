@@ -16,23 +16,32 @@
 #include "wasm-rt-impl.h"
 
 #ifdef CONCURRENT_SPEC_TEST
-#include "threads.h"
-#define USE_ATOMIC _Atomic
-#else
-#define USE_ATOMIC
-#endif
 
 #ifdef _WIN32
 #include "windows.h"
-#define SLEEP_FOR_SEC(s) SLEEP(s * 1000)
+#define SLEEP_FOR_SEC(s) Sleep(s * 1000)
+#define THREAD_ID HANDLE
+#define THREAD_CREATE(thread_id_ptr, func_ptr, func_arg) *thread_id_ptr = CreateThread(NULL /* default security */, 0 /* default stack size */, func_ptr, func_arg, 0 /* default create */, NULL /* out thread id */)
+#define THREAD_JOIN(thread_id_ptr) WaitForMultipleObjects(1, thread_id_ptr, TRUE /* wait for all*/, INFINITE /* no timeout */); CloseHandle(*thread_id_ptr);
+#define ATOMIC_ADD(u32_ptr, val) _InterlockedExchangeAdd(u32_ptr, val)
 #else
 #include <unistd.h>
+#include <pthread.h>
 #define SLEEP_FOR_SEC(s) sleep(s)
+#define THREAD_ID pthread_t
+#define THREAD_CREATE(thread_id_ptr, func_ptr, func_arg) pthread_create(thread_id_ptr, NULL /* default attr */, func_ptr, func_arg)
+#define THREAD_JOIN(thread_id_ptr) pthread_join(*thread_id_ptr, NULL /* thread result */)
+#define ATOMIC_ADD(u32_ptr, val) __atomic_fetch_add(u32_ptr, val, __ATOMIC_SEQ_CST)
 #endif
 
-static USE_ATOMIC int g_tests_run;
-static USE_ATOMIC int g_tests_passed;
+#else
 
+#define ATOMIC_ADD(u32_ptr, val) *u32_ptr += val
+
+#endif
+
+static uint32_t g_tests_run;
+static uint32_t g_tests_passed;
 static void run_spec_tests(void);
 
 static void error(const char* file, int line, const char* format, ...) {
@@ -45,9 +54,9 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_EXCEPTION(f)                                               \
   do {                                                                    \
-    g_tests_run++;                                                        \
+    ATOMIC_ADD(g_tests_run, 1);                                                        \
     if (wasm_rt_impl_try() == WASM_RT_TRAP_UNCAUGHT_EXCEPTION) {          \
-      g_tests_passed++;                                                   \
+      ATOMIC_ADD(g_tests_passed, 1);                                                   \
     } else {                                                              \
       (void)(f);                                                          \
       error(__FILE__, __LINE__, "expected " #f " to throw exception.\n"); \
@@ -56,9 +65,9 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_TRAP(f)                                         \
   do {                                                         \
-    g_tests_run++;                                             \
+    ATOMIC_ADD(g_tests_run, 1);                                             \
     if (wasm_rt_impl_try() != 0) {                             \
-      g_tests_passed++;                                        \
+      ATOMIC_ADD(g_tests_passed, 1);                                        \
     } else {                                                   \
       (void)(f);                                               \
       error(__FILE__, __LINE__, "expected " #f " to trap.\n"); \
@@ -67,7 +76,7 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_EXHAUSTION(f)                                     \
   do {                                                           \
-    g_tests_run++;                                               \
+    ATOMIC_ADD(g_tests_run, 1);                                               \
     wasm_rt_trap_t code = wasm_rt_impl_try();                    \
     switch (code) {                                              \
       case WASM_RT_TRAP_NONE:                                    \
@@ -75,7 +84,7 @@ static void error(const char* file, int line, const char* format, ...) {
         error(__FILE__, __LINE__, "expected " #f " to trap.\n"); \
         break;                                                   \
       case WASM_RT_TRAP_EXHAUSTION:                              \
-        g_tests_passed++;                                        \
+        ATOMIC_ADD(g_tests_passed, 1);                                        \
         break;                                                   \
       default:                                                   \
         error(__FILE__, __LINE__,                                \
@@ -88,20 +97,20 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_RETURN(f)                               \
   do {                                                 \
-    g_tests_run++;                                     \
+    ATOMIC_ADD(g_tests_run, 1);                                     \
     int trap_code = wasm_rt_impl_try();                \
     if (trap_code) {                                   \
       error(__FILE__, __LINE__, #f " trapped (%s).\n", \
             wasm_rt_strerror(trap_code));              \
     } else {                                           \
       f;                                               \
-      g_tests_passed++;                                \
+      ATOMIC_ADD(g_tests_passed, 1);                                \
     }                                                  \
   } while (0)
 
 #define ASSERT_RETURN_T(type, fmt, f, expected)                          \
   do {                                                                   \
-    g_tests_run++;                                                       \
+    ATOMIC_ADD(g_tests_run, 1);                                                       \
     int trap_code = wasm_rt_impl_try();                                  \
     if (trap_code) {                                                     \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                   \
@@ -109,7 +118,7 @@ static void error(const char* file, int line, const char* format, ...) {
     } else {                                                             \
       type actual = f;                                                   \
       if (is_equal_##type(actual, expected)) {                           \
-        g_tests_passed++;                                                \
+        ATOMIC_ADD(g_tests_passed, 1);                                                \
       } else {                                                           \
         error(__FILE__, __LINE__,                                        \
               "in " #f ": expected %" fmt ", got %" fmt ".\n", expected, \
@@ -120,7 +129,7 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_RETURN_FUNCREF(f, expected)                                \
   do {                                                                    \
-    g_tests_run++;                                                        \
+    ATOMIC_ADD(g_tests_run, 1);                                                        \
     int trap_code = wasm_rt_impl_try();                                   \
     if (trap_code) {                                                      \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                    \
@@ -128,7 +137,7 @@ static void error(const char* file, int line, const char* format, ...) {
     } else {                                                              \
       wasm_rt_funcref_t actual = f;                                       \
       if (is_equal_wasm_rt_funcref_t(actual, expected)) {                 \
-        g_tests_passed++;                                                 \
+        ATOMIC_ADD(g_tests_passed, 1);                                                 \
       } else {                                                            \
         error(__FILE__, __LINE__,                                         \
               "in " #f ": mismatch between expected and actual funcref"); \
@@ -138,7 +147,7 @@ static void error(const char* file, int line, const char* format, ...) {
 
 #define ASSERT_RETURN_NAN_T(type, itype, fmt, f, kind)                        \
   do {                                                                        \
-    g_tests_run++;                                                            \
+    ATOMIC_ADD(g_tests_run, 1);                                                            \
     int trap_code = wasm_rt_impl_try();                                       \
     if (trap_code) {                                                          \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                        \
@@ -148,7 +157,7 @@ static void error(const char* file, int line, const char* format, ...) {
       itype iactual;                                                          \
       memcpy(&iactual, &actual, sizeof(iactual));                             \
       if (is_##kind##_nan_##type(iactual)) {                                  \
-        g_tests_passed++;                                                     \
+        ATOMIC_ADD(g_tests_passed, 1);                                                     \
       } else {                                                                \
         error(__FILE__, __LINE__,                                             \
               "in " #f ": expected result to be a " #kind " nan, got 0x%" fmt \
@@ -170,7 +179,7 @@ static void error(const char* file, int line, const char* format, ...) {
 #define ASSERT_RETURN_MULTI_T(type, fmt_expected, fmt_got, f, compare,        \
                               expected, found)                                \
   do {                                                                        \
-    g_tests_run++;                                                            \
+    ATOMIC_ADD(g_tests_run, 1);                                                            \
     int trap_code = wasm_rt_impl_try();                                       \
     if (trap_code) {                                                          \
       error(__FILE__, __LINE__, #f " trapped (%s).\n",                        \
@@ -178,7 +187,7 @@ static void error(const char* file, int line, const char* format, ...) {
     } else {                                                                  \
       type actual = f;                                                        \
       if (compare) {                                                          \
-        g_tests_passed++;                                                     \
+        ATOMIC_ADD(g_tests_passed, 1);                                                     \
       } else {                                                                \
         error(__FILE__, __LINE__,                                             \
               "in " #f ": expected <" fmt_expected ">, got <" fmt_got ">.\n", \

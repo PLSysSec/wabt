@@ -165,12 +165,12 @@ class CWriter(object):
             self._WriteCommand(command)
 
         self.out_file.write('\nreturn 0;\n}\n\nvoid run_spec_tests(void) {\n\n')
-        self.out_file.write('thrd_t threadId[%d];\n' % (test_function_num + 1))
+        self.out_file.write('THREAD_ID threadId[%d];\n' % test_function_num)
         for i in range(test_function_num):
             self.out_file.write('SLEEP_FOR_SEC(2);\n')
-            self.out_file.write('thrd_create(&(threadId[%d]), run_spec_tests_%d, NULL);\n' % (i, i))
+            self.out_file.write('THREAD_CREATE(&(threadId[%d]), run_spec_tests_%d, NULL);\n' % (i, i))
         for i in range(test_function_num):
-            self.out_file.write('thrd_join(threadId[%d], NULL);\n' % i)
+            self.out_file.write('THREAD_JOIN(&(threadId[%d]));\n' % i)
         self._WriteModuleCleanUps()
         self.out_file.write('\n}\n')
 
@@ -482,7 +482,7 @@ def Compile(cc, cxx, is_c, c_filename, out_dir, *cflags):
     o_filename = utils.ChangeDir(utils.ChangeExt(c_filename, ext), out_dir)
     args = list(cflags)
     if IS_WINDOWS:
-        args += ['/nologo', '/MDd', '/c', c_filename, '/Fo' + o_filename]
+        args += ['/Zi', '/nologo', '/MDd', '/c', c_filename, '/Fo' + o_filename]
         if not is_c:
             args += ['/std:c++20']
     else:
@@ -517,9 +517,9 @@ def Link(cc, o_filenames, main_exe, *extra_args):
     if IS_WINDOWS:
         # Windows default to 1Mb of stack but `spec/skip-stack-guard-page.wast`
         # uses more than this.  Set to 8Mb for parity with linux.
-        args += ['/nologo', '/MDd', '/link', '/stack:8388608', '/out:' + main_exe]
+        args += ['/Zi', '/std:c++20', '/nologo', '/MDd', '/link', '/stack:8388608', '/out:' + main_exe]
     else:
-        args += ['-o', main_exe]
+        args += ['-std=c++20', '-o', main_exe]
     args += list(extra_args)
     # Use RunWithArgsForStdout and discard stdout because cl.exe
     # unconditionally prints the name of input files on stdout
