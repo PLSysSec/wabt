@@ -10,11 +10,28 @@
 #include <string.h>
 
 #include "wasm-rt.h"
-#include "wasm-rt-impl.h"
+
 #include "wasm-rt-exceptions.h"
 
-static int g_tests_run;
-static int g_tests_passed;
+#include "wasm-rt-impl.h"
+
+#ifdef CONCURRENT_SPEC_TEST
+#include "threads.h"
+#define USE_ATOMIC _Atomic
+#else
+#define USE_ATOMIC
+#endif
+
+#ifdef _WIN32
+#include "windows.h"
+#define SLEEP_FOR_SEC(s) SLEEP(s * 1000)
+#else
+#include <unistd.h>
+#define SLEEP_FOR_SEC(s) sleep(s)
+#endif
+
+static USE_ATOMIC int g_tests_run;
+static USE_ATOMIC int g_tests_passed;
 
 static void run_spec_tests(void);
 
@@ -169,7 +186,6 @@ static void error(const char* file, int line, const char* format, ...) {
       }                                                                       \
     }                                                                         \
   } while (0)
-
 
 #define ASSERT_RETURN_I32(f, expected) ASSERT_RETURN_T(u32, "u", f, expected)
 #define ASSERT_RETURN_I64(f, expected) ASSERT_RETURN_T(u64, PRIu64, f, expected)

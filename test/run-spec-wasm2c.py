@@ -123,12 +123,13 @@ def IsModuleCommand(command):
 
 class CWriter(object):
 
-    def __init__(self, spec_json, prefix, out_file, out_dir):
+    def __init__(self, spec_json, prefix, concurrent_tests, out_file, out_dir):
         self.source_filename = os.path.basename(spec_json['source_filename'])
         self.commands = spec_json['commands']
         self.out_file = out_file
         self.out_dir = out_dir
         self.prefix = prefix
+        self.concurrent_tests = concurrent_tests
         self.module_idx = 0
         self.module_name_to_idx = {}
         self.module_prefix_map = {}
@@ -137,10 +138,7 @@ class CWriter(object):
         self._MaybeWriteDummyModule()
         self._CacheModulePrefixes()
 
-    def Write(self):
-        self._WriteIncludes()
-        self.out_file.write(self.prefix)
-        self._WriteModuleInstances()
+    def WriteSerialTests(self):
         test_function_num = 0
         self.out_file.write('\nvoid run_spec_tests_0(void) {\n\n')
         for i, command in enumerate(self.commands):
@@ -154,6 +152,38 @@ class CWriter(object):
             self.out_file.write('run_spec_tests_%d();\n' % i)
         self._WriteModuleCleanUps()
         self.out_file.write('\n}\n')
+
+    # Write each modules tests in a separate function which can then be called in separate threads
+    def WriteConcurrentTests(self):
+        test_function_num = 0
+        for i, command in enumerate(self.commands):
+            if command['type'] == 'module':
+                if test_function_num != 0:
+                    self.out_file.write('\nreturn 0;\n}\n')
+                self.out_file.write('\nint run_spec_tests_%d(void* unused) {\n\n(void) unused;\n' % test_function_num)
+                test_function_num += 1
+            self._WriteCommand(command)
+
+        self.out_file.write('\nreturn 0;\n}\n\nvoid run_spec_tests(void) {\n\n')
+        self.out_file.write('thrd_t threadId[%d];\n' % (test_function_num + 1))
+        for i in range(test_function_num):
+            self.out_file.write('SLEEP_FOR_SEC(2);\n')
+            self.out_file.write('thrd_create(&(threadId[%d]), run_spec_tests_%d, NULL);\n' % (i, i))
+        for i in range(test_function_num):
+            self.out_file.write('thrd_join(threadId[%d], NULL);\n' % i)
+        self._WriteModuleCleanUps()
+        self.out_file.write('\n}\n')
+
+    def Write(self):
+        self._WriteIncludes()
+        if self.concurrent_tests:
+            self.out_file.write('\n#define CONCURRENT_SPEC_TEST\n')
+        self.out_file.write(self.prefix)
+        self._WriteModuleInstances()
+        if self.concurrent_tests:
+            self.WriteConcurrentTests()
+        else:
+            self.WriteSerialTests()
 
     def GetModuleFilenames(self):
         return [c['filename'] for c in self.commands if IsModuleCommand(c)]
@@ -453,6 +483,8 @@ def Compile(cc, cxx, is_c, c_filename, out_dir, *cflags):
     args = list(cflags)
     if IS_WINDOWS:
         args += ['/nologo', '/MDd', '/c', c_filename, '/Fo' + o_filename]
+        if not is_c:
+            args += ['/std:c++20']
     else:
         # See "Compiling the wasm2c output" section of wasm2c/README.md
         # When compiling with -O2, GCC and clang require '-fno-optimize-sibling-calls'
@@ -473,7 +505,10 @@ def Compile(cc, cxx, is_c, c_filename, out_dir, *cflags):
     # Use RunWithArgsForStdout and discard stdout because cl.exe
     # unconditionally prints the name of input files on stdout
     # and we don't want that to be part of our stdout.
-    cc.RunWithArgsForStdout(*args)
+    if is_c:
+        cc.RunWithArgsForStdout(*args)
+    else:
+        cxx.RunWithArgsForStdout(*args)
     return o_filename
 
 
@@ -546,6 +581,7 @@ def main(args):
     parser.add_argument('--enable-memory64', action='store_true')
     parser.add_argument('--enable-extended-const', action='store_true')
     parser.add_argument('--enable-threads', action='store_true')
+    parser.add_argument('--concurrent-tests', action='store_true')
     parser.add_argument('--disable-bulk-memory', action='store_true')
     parser.add_argument('--disable-reference-types', action='store_true')
     parser.add_argument('--debug-names', action='store_true')
@@ -605,7 +641,7 @@ def main(args):
                 prefix = prefix_file.read() + '\n'
 
         output = io.StringIO()
-        cwriter = CWriter(spec_json, prefix, output, out_dir)
+        cwriter = CWriter(spec_json, prefix, options.concurrent_tests, output, out_dir)
 
         o_filenames = []
         cflags = ['-I%s' % options.wasmrt_dir, '-I%s' % options.simde_dir]
