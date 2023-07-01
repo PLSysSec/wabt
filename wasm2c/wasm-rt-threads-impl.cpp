@@ -58,7 +58,7 @@ static void create_timeout(int64_t timeout,
 
   // Spawn a timer thread
   std::thread([timeout, waiter_info_weak]() {
-    const int64_t max_timeout_chunk = 1000000;  // 1 ms
+    const int64_t max_timeout_chunk = 100000000;  // 100 ms in nanos
     int64_t remaining = timeout;
 
     while (remaining > 0) {

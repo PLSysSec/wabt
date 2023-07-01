@@ -482,7 +482,7 @@ def Compile(cc, cxx, is_c, c_filename, out_dir, *cflags):
     o_filename = utils.ChangeDir(utils.ChangeExt(c_filename, ext), out_dir)
     args = list(cflags)
     if IS_WINDOWS:
-        args += ['/Zi', '/nologo', '/MDd', '/c', c_filename, '/Fo' + o_filename]
+        args += ['/nologo', '/MDd', '/c', c_filename, '/Fo' + o_filename]
         if not is_c:
             args += ['/std:c++20']
     else:
@@ -517,7 +517,7 @@ def Link(cc, o_filenames, main_exe, *extra_args):
     if IS_WINDOWS:
         # Windows default to 1Mb of stack but `spec/skip-stack-guard-page.wast`
         # uses more than this.  Set to 8Mb for parity with linux.
-        args += ['/Zi', '/std:c++20', '/nologo', '/MDd', '/link', '/stack:8388608', '/out:' + main_exe]
+        args += ['/std:c++20', '/nologo', '/MDd', '/link', '/stack:8388608', '/out:' + main_exe]
     else:
         args += ['-std=c++20', '-o', main_exe]
     args += list(extra_args)
