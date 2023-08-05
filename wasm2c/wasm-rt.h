@@ -287,6 +287,33 @@ typedef struct {
   bool is64;
 } wasm_rt_memory_t;
 
+#ifdef __STDC_VERSION__
+#if __STDC_VERSION__ >= 201112L
+#define WASM2C_C11_AVAILABLE
+#endif
+#endif
+
+#ifdef WASM2C_C11_AVAILABLE
+/** A shared Memory object. */
+typedef struct {
+  /** The linear memory data, with a byte length of `size`. The memory is marked
+   * atomic as it is shared and may have to be accessed with different memory
+   * orders --- sequential when being accessed atomically, relaxed otherwise.
+   * The C standard additionally can assume that writes to linear memory . */
+
+  //_Atomic
+
+  volatile uint8_t* data;
+  /** The current and maximum page count for this Memory object. If there is no
+   * maximum, `max_pages` is 0xffffffffu (i.e. UINT32_MAX). */
+  uint64_t pages, max_pages;
+  /** The current size of the linear memory, in bytes. */
+  uint64_t size;
+  /** Is this memory indexed by u64 (as opposed to default u32) */
+  bool is64;
+} wasm_rt_shared_memory_t;
+#endif
+
 /** A Table of type funcref. */
 typedef struct {
   /** The table element data, with an element count of `size`. */
@@ -402,6 +429,26 @@ uint64_t wasm_rt_grow_memory(wasm_rt_memory_t*, uint64_t pages);
  * Free a Memory object.
  */
 void wasm_rt_free_memory(wasm_rt_memory_t*);
+
+#ifdef WASM2C_C11_AVAILABLE
+/**
+ * Shared memory version of wasm_rt_allocate_memory
+*/
+void wasm_rt_allocate_shared_memory(wasm_rt_shared_memory_t*,
+                             uint64_t initial_pages,
+                             uint64_t max_pages,
+                             bool is64);
+
+/**
+ * Shared memory version of wasm_rt_grow_memory
+*/
+uint64_t wasm_rt_grow_shared_memory(wasm_rt_shared_memory_t*, uint64_t pages);
+
+/**
+ * Shared memory version of wasm_rt_free_memory
+*/
+void wasm_rt_free_shared_memory(wasm_rt_shared_memory_t*);
+#endif
 
 /**
  * Initialize a funcref Table object with an element count of `elements` and a

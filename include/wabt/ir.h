@@ -1253,6 +1253,7 @@ struct Module {
     bool simd = false;
     bool exceptions = false;
     bool threads = false;
+    bool shared_memory = false;
   } features_used;
 };
 

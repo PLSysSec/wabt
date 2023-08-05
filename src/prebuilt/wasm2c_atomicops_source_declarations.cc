@@ -225,23 +225,37 @@ R"w2c_template(    TRAP(UNALIGNED);                     \
 R"w2c_template(  }
 )w2c_template"
 R"w2c_template(
-#define DEFINE_ATOMIC_LOAD(name, t1, t2, t3, force_read)   \
+#define DEFINE_ATOMIC_LOAD(name, t1, t2, t3, force_read)          \
 )w2c_template"
 R"w2c_template(  static inline t3 name(wasm_rt_memory_t* mem, u64 addr) { \
 )w2c_template"
-R"w2c_template(    MEMCHECK(mem, addr, t1);                               \
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                      \
 )w2c_template"
-R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                      \
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                             \
 )w2c_template"
-R"w2c_template(    t1 result;                                             \
+R"w2c_template(    t1 result;                                                    \
 )w2c_template"
-R"w2c_template(    wasm_rt_memcpy(&result, &mem->data[addr], sizeof(t1)); \
+R"w2c_template(    result = atomic_load_##t1(&mem->data[addr]);                  \
 )w2c_template"
-R"w2c_template(    result = atomic_load_##t1(&mem->data[addr]);           \
+R"w2c_template(    force_read(result);                                           \
 )w2c_template"
-R"w2c_template(    force_read(result);                                    \
+R"w2c_template(    return (t3)(t2)result;                                        \
 )w2c_template"
-R"w2c_template(    return (t3)(t2)result;                                 \
+R"w2c_template(  } \
+)w2c_template"
+R"w2c_template(  static inline t3 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr) { \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                      \
+)w2c_template"
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                             \
+)w2c_template"
+R"w2c_template(    t1 result;                                                    \
+)w2c_template"
+R"w2c_template(    result = atomic_load_##t1(&mem->data[addr]);                  \
+)w2c_template"
+R"w2c_template(    force_read(result);                                           \
+)w2c_template"
+R"w2c_template(    return (t3)(t2)result;                                        \
 )w2c_template"
 R"w2c_template(  }
 )w2c_template"
@@ -261,17 +275,29 @@ R"w2c_template(DEFINE_ATOMIC_LOAD(i64_atomic_load16_u, u16, u64, u64, FORCE_READ
 R"w2c_template(DEFINE_ATOMIC_LOAD(i64_atomic_load32_u, u32, u64, u64, FORCE_READ_INT)
 )w2c_template"
 R"w2c_template(
-#define DEFINE_ATOMIC_STORE(name, t1, t2)                              \
+#define DEFINE_ATOMIC_STORE(name, t1, t2)                                     \
 )w2c_template"
 R"w2c_template(  static inline void name(wasm_rt_memory_t* mem, u64 addr, t2 value) { \
 )w2c_template"
-R"w2c_template(    MEMCHECK(mem, addr, t1);                                           \
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                                  \
 )w2c_template"
-R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                  \
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                         \
 )w2c_template"
-R"w2c_template(    t1 wrapped = (t1)value;                                            \
+R"w2c_template(    t1 wrapped = (t1)value;                                                   \
 )w2c_template"
-R"w2c_template(    atomic_store_##t1(&mem->data[addr], wrapped);                      \
+R"w2c_template(    atomic_store_##t1(&mem->data[addr], wrapped);                             \
+)w2c_template"
+R"w2c_template(  } \
+)w2c_template"
+R"w2c_template(  static inline void name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t2 value) { \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                                  \
+)w2c_template"
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                         \
+)w2c_template"
+R"w2c_template(    t1 wrapped = (t1)value;                                                   \
+)w2c_template"
+R"w2c_template(    atomic_store_##t1(&mem->data[addr], wrapped);                             \
 )w2c_template"
 R"w2c_template(  }
 )w2c_template"
@@ -294,6 +320,20 @@ R"w2c_template(
 #define DEFINE_ATOMIC_RMW(name, op, t1, t2)                          \
 )w2c_template"
 R"w2c_template(  static inline t2 name(wasm_rt_memory_t* mem, u64 addr, t2 value) { \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                         \
+)w2c_template"
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                \
+)w2c_template"
+R"w2c_template(    t1 wrapped = (t1)value;                                          \
+)w2c_template"
+R"w2c_template(    t1 ret = atomic_##op##_##t1(&mem->data[addr], wrapped);          \
+)w2c_template"
+R"w2c_template(    return (t2)ret;                                                  \
+)w2c_template"
+R"w2c_template(  }\
+)w2c_template"
+R"w2c_template(  static inline t2 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t2 value) { \
 )w2c_template"
 R"w2c_template(    MEMCHECK(mem, addr, t1);                                         \
 )w2c_template"
@@ -401,6 +441,26 @@ R"w2c_template(
 #define DEFINE_ATOMIC_CMP_XCHG(name, t1, t2)                                   \
 )w2c_template"
 R"w2c_template(  static inline t1 name(wasm_rt_memory_t* mem, u64 addr, t1 expected,          \
+)w2c_template"
+R"w2c_template(                        t1 replacement) {                                      \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t2);                                                   \
+)w2c_template"
+R"w2c_template(    ATOMIC_ALIGNMENT_CHECK(addr, t2);                                          \
+)w2c_template"
+R"w2c_template(    t2 expected_wrapped = (t2)expected;                                        \
+)w2c_template"
+R"w2c_template(    t2 replacement_wrapped = (t2)replacement;                                  \
+)w2c_template"
+R"w2c_template(    t2 old = atomic_compare_exchange_##t2(&mem->data[addr], &expected_wrapped, \
+)w2c_template"
+R"w2c_template(                                          replacement_wrapped);                \
+)w2c_template"
+R"w2c_template(    return (t1)old;                                                            \
+)w2c_template"
+R"w2c_template(  }\
+)w2c_template"
+R"w2c_template(  static inline t1 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t1 expected,          \
 )w2c_template"
 R"w2c_template(                        t1 replacement) {                                      \
 )w2c_template"

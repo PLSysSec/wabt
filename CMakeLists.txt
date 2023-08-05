@@ -263,6 +263,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_source_declarations.cc" -D in="${WABT_SOURCE_DIR}/src/template/wasm2c.declarations.c" -D symbol="s_source_declarations" -P ${TEMPLATE_CMAKE}
   COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_simd_source_declarations.cc" -D in="${WABT_SOURCE_DIR}/src/template/wasm2c_simd.declarations.c" -D symbol="s_simd_source_declarations" -P ${TEMPLATE_CMAKE}
   COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_atomicops_source_declarations.cc" -D in="${WABT_SOURCE_DIR}/src/template/wasm2c_atomicops.declarations.c" -D symbol="s_atomicops_source_declarations" -P ${TEMPLATE_CMAKE}
+  COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_sharedmem_source_declarations.cc" -D in="${WABT_SOURCE_DIR}/src/template/wasm2c_sharedmem.declarations.c" -D symbol="s_sharedmem_source_declarations" -P ${TEMPLATE_CMAKE}
   COMMAND ${CMAKE_COMMAND} -E touch gen-wasm2c-prebuilt
 
   DEPENDS ${WABT_SOURCE_DIR}/src/template/wasm2c.top.h
@@ -271,6 +272,7 @@ add_custom_command(
   ${WABT_SOURCE_DIR}/src/template/wasm2c.declarations.c
   ${WABT_SOURCE_DIR}/src/template/wasm2c_simd.declarations.c
   ${WABT_SOURCE_DIR}/src/template/wasm2c_atomicops.declarations.c
+  ${WABT_SOURCE_DIR}/src/template/wasm2c_sharedmem.declarations.c
 )
 
 add_custom_target(gen-wasm2c-prebuilt-target DEPENDS gen-wasm2c-prebuilt)
@@ -280,7 +282,8 @@ set(CWRITER_TEMPLATE_SRC ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_header_top.cc
                          ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_source_includes.cc
                          ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_source_declarations.cc
                          ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_simd_source_declarations.cc
-                         ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_atomicops_source_declarations.cc)
+                         ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_atomicops_source_declarations.cc
+                         ${WABT_SOURCE_DIR}/src/prebuilt/wasm2c_sharedmem_source_declarations.cc)
 
 add_custom_target(everything)
 
@@ -426,6 +429,7 @@ if (HAVE_SETJMP_H)
   set(WASM_RT_FILES "wasm2c/wasm-rt-impl.h" "wasm2c/wasm-rt-impl.c" "wasm2c/wasm-rt-exceptions-impl.c")
 
   add_library(wasm-rt-impl STATIC ${WASM_RT_FILES})
+  target_include_directories(wasm-rt-impl PRIVATE "wasm2c/")
   add_library(wabt::wasm-rt-impl ALIAS wasm-rt-impl)
   if (WABT_BIG_ENDIAN)
     target_compile_definitions(wasm-rt-impl PUBLIC WABT_BIG_ENDIAN=1)

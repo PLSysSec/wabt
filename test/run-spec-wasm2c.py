@@ -465,7 +465,7 @@ def Compile(cc, c_filename, out_dir, *cflags):
                  '-Wno-infinite-recursion',
                  '-fno-optimize-sibling-calls',
                  '-frounding-math', '-fsignaling-nans',
-                 '-std=c99', '-D_DEFAULT_SOURCE']
+                 '-std=c11', '-D_DEFAULT_SOURCE']
     # Use RunWithArgsForStdout and discard stdout because cl.exe
     # unconditionally prints the name of input files on stdout
     # and we don't want that to be part of our stdout.

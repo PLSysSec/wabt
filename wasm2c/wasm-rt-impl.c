@@ -36,8 +36,6 @@
 #include <sys/mman.h>
 #endif
 
-#define PAGE_SIZE 65536
-
 #if WASM_RT_INSTALL_SIGNAL_HANDLER
 static bool g_signal_handler_installed = false;
 #ifdef _WIN32
@@ -247,112 +245,19 @@ void wasm_rt_free(void) {
 #endif
 }
 
-#if WASM_RT_USE_MMAP
+// Include memory operations on wasm_rt_memory_t
+#include "wasm-rt-impl-mem.c"
 
-static uint64_t get_allocation_size_for_mmap(wasm_rt_memory_t* memory) {
-  assert(!memory->is64 &&
-         "memory64 is not yet compatible with WASM_RT_USE_MMAP");
-#if WASM_RT_MEMCHECK_GUARD_PAGES
-  /* Reserve 8GiB. */
-  const uint64_t max_size = 0x200000000ul;
-  return max_size;
-#else
-  if (memory->max_pages != 0) {
-    const uint64_t max_size = memory->max_pages * PAGE_SIZE;
-    return max_size;
-  }
-
-  /* Reserve 4GiB. */
-  const uint64_t max_size = 0x100000000ul;
-  return max_size;
+#ifdef WASM2C_C11_AVAILABLE
+// Include memory operations on wasm_rt_shared_memory_t
+  #define MEMORY_TYPE_NAME wasm_rt_shared_memory_t
+  #define MEMORY_DATA_TYPE volatile uint8_t*
+  #define HELPERS_NAME(name) name##_shared
+  #define RT_ALLOCATE_MEMORY wasm_rt_allocate_shared_memory
+  #define RT_GROW_MEMORY wasm_rt_grow_shared_memory
+  #define RT_FREE_MEMORY wasm_rt_free_shared_memory
+#include "wasm-rt-impl-mem.c"
 #endif
-}
-
-#endif
-
-void wasm_rt_allocate_memory(wasm_rt_memory_t* memory,
-                             uint64_t initial_pages,
-                             uint64_t max_pages,
-                             bool is64) {
-  uint64_t byte_length = initial_pages * PAGE_SIZE;
-  memory->size = byte_length;
-  memory->pages = initial_pages;
-  memory->max_pages = max_pages;
-  memory->is64 = is64;
-
-#if WASM_RT_USE_MMAP
-  const uint64_t mmap_size = get_allocation_size_for_mmap(memory);
-  void* addr = os_mmap(mmap_size);
-  if (!addr) {
-    os_print_last_error("os_mmap failed.");
-    abort();
-  }
-  int ret = os_mprotect(addr, byte_length);
-  if (ret != 0) {
-    os_print_last_error("os_mprotect failed.");
-    abort();
-  }
-  memory->data = addr;
-#else
-  memory->data = calloc(byte_length, 1);
-#endif
-}
-
-static uint64_t grow_memory_impl(wasm_rt_memory_t* memory, uint64_t delta) {
-  uint64_t old_pages = memory->pages;
-  uint64_t new_pages = memory->pages + delta;
-  if (new_pages == 0) {
-    return 0;
-  }
-  if (new_pages < old_pages || new_pages > memory->max_pages) {
-    return (uint64_t)-1;
-  }
-  uint64_t old_size = old_pages * PAGE_SIZE;
-  uint64_t new_size = new_pages * PAGE_SIZE;
-  uint64_t delta_size = delta * PAGE_SIZE;
-#if WASM_RT_USE_MMAP
-  uint8_t* new_data = memory->data;
-  int ret = os_mprotect(new_data + old_size, delta_size);
-  if (ret != 0) {
-    return (uint64_t)-1;
-  }
-#else
-  uint8_t* new_data = realloc(memory->data, new_size);
-  if (new_data == NULL) {
-    return (uint64_t)-1;
-  }
-#if !WABT_BIG_ENDIAN
-  memset(new_data + old_size, 0, delta_size);
-#endif
-#endif
-#if WABT_BIG_ENDIAN
-  memmove(new_data + new_size - old_size, new_data, old_size);
-  memset(new_data, 0, delta_size);
-#endif
-  memory->pages = new_pages;
-  memory->size = new_size;
-  memory->data = new_data;
-  return old_pages;
-}
-
-uint64_t wasm_rt_grow_memory(wasm_rt_memory_t* memory, uint64_t delta) {
-  uint64_t ret = grow_memory_impl(memory, delta);
-#ifdef WASM_RT_GROW_FAILED_HANDLER
-  if (ret == -1) {
-    WASM_RT_GROW_FAILED_HANDLER();
-  }
-#endif
-  return ret;
-}
-
-void wasm_rt_free_memory(wasm_rt_memory_t* memory) {
-#if WASM_RT_USE_MMAP
-  const uint64_t mmap_size = get_allocation_size_for_mmap(memory);
-  os_munmap(memory->data, mmap_size);  // ignore error
-#else
-  free(memory->data);
-#endif
-}
 
 #define DEFINE_TABLE_OPS(type)                                          \
   void wasm_rt_allocate_##type##_table(wasm_rt_##type##_table_t* table, \

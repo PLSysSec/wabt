@@ -44,6 +44,7 @@ extern const char* s_source_includes;
 extern const char* s_source_declarations;
 extern const char* s_simd_source_declarations;
 extern const char* s_atomicops_source_declarations;
+extern const char* s_sharedmem_source_declarations;
 
 namespace wabt {
 
@@ -375,8 +376,8 @@ class CWriter {
   void WriteGlobal(const Global&, const std::string&);
   void WriteGlobalPtr(const Global&, const std::string&);
   void WriteMemories();
-  void WriteMemory(const std::string&);
-  void WriteMemoryPtr(const std::string&);
+  void WriteMemory(const std::string&, bool is_shared);
+  void WriteMemoryPtr(const std::string&, bool is_shared);
   void WriteTables();
   void WriteTable(const std::string&, const wabt::Type&);
   void WriteTablePtr(const std::string&, const Table&);
@@ -1425,6 +1426,10 @@ void CWriter::WriteSourceTop() {
   if (module_->features_used.threads) {
     Write(s_atomicops_source_declarations);
   }
+
+  if (module_->features_used.shared_memory) {
+    Write(s_sharedmem_source_declarations);
+  }
 }
 
 void CWriter::WriteMultiCTop() {
@@ -1672,7 +1677,11 @@ void CWriter::BeginInstance() {
       }
 
       case ExternalKind::Memory: {
-        Write("wasm_rt_memory_t");
+        if (cast<MemoryImport>(import)->memory.page_limits.is_shared) {
+          Write("wasm_rt_shared_memory_t");
+        } else {
+          Write("wasm_rt_memory_t");
+        }
         break;
       }
 
@@ -1715,7 +1724,8 @@ void CWriter::BeginInstance() {
 
       case ExternalKind::Memory:
         WriteMemory(std::string("*") +
-                    ExportName(import->module_name, import->field_name));
+                        ExportName(import->module_name, import->field_name),
+                    cast<MemoryImport>(import)->memory.page_limits.is_shared);
         break;
 
       case ExternalKind::Table: {
@@ -1899,20 +1909,22 @@ void CWriter::WriteMemories() {
     bool is_import = memory_index < module_->num_memory_imports;
     if (!is_import) {
       WriteMemory(
-          DefineInstanceMemberName(ModuleFieldType::Memory, memory->name));
+          DefineInstanceMemberName(ModuleFieldType::Memory, memory->name),
+          memory->page_limits.is_shared);
       Write(Newline());
     }
     ++memory_index;
   }
 }
 
-void CWriter::WriteMemory(const std::string& name) {
-  Write("wasm_rt_memory_t ", name, ";");
+void CWriter::WriteMemory(const std::string& name, bool is_shared) {
+  Write(is_shared ? "wasm_rt_shared_memory_t" : "wasm_rt_memory_t", " ", name,
+        ";");
 }
 
-void CWriter::WriteMemoryPtr(const std::string& name) {
-  Write("wasm_rt_memory_t* ", name, "(", ModuleInstanceTypeName(),
-        "* instance)");
+void CWriter::WriteMemoryPtr(const std::string& name, bool is_shared) {
+  Write(is_shared ? "wasm_rt_shared_memory_t " : "wasm_rt_memory_t ", "* ",
+        name, "(", ModuleInstanceTypeName(), "* instance)");
 }
 
 void CWriter::WriteTables() {
@@ -2041,7 +2053,10 @@ void CWriter::WriteDataInitializers() {
         max = memory->page_limits.is_64 ? (static_cast<uint64_t>(1) << 48)
                                         : 65536;
       }
-      Write("wasm_rt_allocate_memory(",
+      const char* func = memory->page_limits.is_shared? 
+        "wasm_rt_allocate_shared_memory" :
+        "wasm_rt_allocate_memory";
+      Write(func, "(",
             ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", ",
             memory->page_limits.initial, ", ", max, ", ",
             memory->page_limits.is_64, ");", Newline());
@@ -2298,7 +2313,7 @@ void CWriter::WriteExports(CWriterPhase kind) {
       case ExternalKind::Memory: {
         const Memory* memory = module_->GetMemory(export_->var);
         internal_name = memory->name;
-        WriteMemoryPtr(mangled_name);
+        WriteMemoryPtr(mangled_name, memory->page_limits.is_shared);
         break;
       }
 
@@ -2579,7 +2594,10 @@ void CWriter::WriteFree() {
     for (const Memory* memory : module_->memories) {
       bool is_import = memory_index < module_->num_memory_imports;
       if (!is_import) {
-        Write("wasm_rt_free_memory(",
+        const char* func = memory->page_limits.is_shared? 
+          "wasm_rt_free_shared_memory" :
+          "wasm_rt_free_memory";
+        Write(func, "(",
               ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ");",
               Newline());
       }
@@ -3420,7 +3438,10 @@ void CWriter::Write(const ExprList& exprs) {
         Memory* memory = module_->memories[module_->GetMemoryIndex(
             cast<MemoryGrowExpr>(&expr)->memidx)];
 
-        Write(StackVar(0), " = wasm_rt_grow_memory(",
+        const char* func = memory->page_limits.is_shared? 
+          "wasm_rt_grow_shared_memory" :
+          "wasm_rt_grow_memory";
+        Write(StackVar(0), " = ", func, "(",
               ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", ",
               StackVar(0), ");", Newline());
         break;
@@ -4549,7 +4570,7 @@ void CWriter::Write(const ConvertExpr& expr) {
 }
 
 void CWriter::Write(const LoadExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch (expr.opcode) {
     case Opcode::I32Load: func = "i32_load"; break;
@@ -4580,6 +4601,9 @@ void CWriter::Write(const LoadExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
 
   Type result_type = expr.opcode.GetResultType();
   Write(StackVar(0, result_type), " = ", func, "(",
@@ -4593,7 +4617,7 @@ void CWriter::Write(const LoadExpr& expr) {
 }
 
 void CWriter::Write(const StoreExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch (expr.opcode) {
     case Opcode::I32Store: func = "i32_store"; break;
@@ -4613,6 +4637,9 @@ void CWriter::Write(const StoreExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
 
   Write(func, "(", ExternalInstancePtr(ModuleFieldType::Memory, memory->name),
         ", (u64)(", StackVar(1), ")");
@@ -5186,7 +5213,7 @@ void CWriter::Write(const LoadZeroExpr& expr) {
 }
 
 void CWriter::Write(const AtomicLoadExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch (expr.opcode) {
     case Opcode::I32AtomicLoad: func = "i32_atomic_load"; break;
@@ -5203,6 +5230,9 @@ void CWriter::Write(const AtomicLoadExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
 
   Type result_type = expr.opcode.GetResultType();
   Write(StackVar(0, result_type), " = ", func, "(",
@@ -5216,7 +5246,7 @@ void CWriter::Write(const AtomicLoadExpr& expr) {
 }
 
 void CWriter::Write(const AtomicStoreExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch (expr.opcode) {
     case Opcode::I32AtomicStore: func = "i32_atomic_store"; break;
@@ -5233,6 +5263,9 @@ void CWriter::Write(const AtomicStoreExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
 
   Write(func, "(", ExternalInstancePtr(ModuleFieldType::Memory, memory->name),
         ", (u64)(", StackVar(1), ")");
@@ -5243,7 +5276,7 @@ void CWriter::Write(const AtomicStoreExpr& expr) {
 }
 
 void CWriter::Write(const AtomicRmwExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch (expr.opcode) {
     case Opcode::I32AtomicRmwAdd: func = "i32_atomic_rmw_add"; break;
@@ -5294,6 +5327,10 @@ void CWriter::Write(const AtomicRmwExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
+
   Type result_type = expr.opcode.GetResultType();
 
   Write(StackVar(1, result_type), " = ", func, "(",
@@ -5307,7 +5344,7 @@ void CWriter::Write(const AtomicRmwExpr& expr) {
 }
 
 void CWriter::Write(const AtomicRmwCmpxchgExpr& expr) {
-  const char* func = nullptr;
+  std::string func = "";
   // clang-format off
   switch(expr.opcode) {
     case Opcode::I32AtomicRmwCmpxchg: func = "i32_atomic_rmw_cmpxchg"; break;
@@ -5323,6 +5360,10 @@ void CWriter::Write(const AtomicRmwCmpxchgExpr& expr) {
   // clang-format on
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
+  if (memory->page_limits.is_shared) {
+    func += "_shared";
+  }
+
   Type result_type = expr.opcode.GetResultType();
 
   Write(StackVar(2, result_type), " = ", func, "(",

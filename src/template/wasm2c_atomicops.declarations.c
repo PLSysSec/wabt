@@ -125,15 +125,22 @@
     TRAP(UNALIGNED);                     \
   }
 
-#define DEFINE_ATOMIC_LOAD(name, t1, t2, t3, force_read)   \
+#define DEFINE_ATOMIC_LOAD(name, t1, t2, t3, force_read)          \
   static inline t3 name(wasm_rt_memory_t* mem, u64 addr) { \
-    MEMCHECK(mem, addr, t1);                               \
-    ATOMIC_ALIGNMENT_CHECK(addr, t1);                      \
-    t1 result;                                             \
-    wasm_rt_memcpy(&result, &mem->data[addr], sizeof(t1)); \
-    result = atomic_load_##t1(&mem->data[addr]);           \
-    force_read(result);                                    \
-    return (t3)(t2)result;                                 \
+    MEMCHECK(mem, addr, t1);                                      \
+    ATOMIC_ALIGNMENT_CHECK(addr, t1);                             \
+    t1 result;                                                    \
+    result = atomic_load_##t1(&mem->data[addr]);                  \
+    force_read(result);                                           \
+    return (t3)(t2)result;                                        \
+  } \
+  static inline t3 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr) { \
+    MEMCHECK(mem, addr, t1);                                      \
+    ATOMIC_ALIGNMENT_CHECK(addr, t1);                             \
+    t1 result;                                                    \
+    result = atomic_load_##t1(&mem->data[addr]);                  \
+    force_read(result);                                           \
+    return (t3)(t2)result;                                        \
   }
 
 DEFINE_ATOMIC_LOAD(i32_atomic_load, u32, u32, u32, FORCE_READ_INT)
@@ -144,12 +151,18 @@ DEFINE_ATOMIC_LOAD(i32_atomic_load16_u, u16, u32, u32, FORCE_READ_INT)
 DEFINE_ATOMIC_LOAD(i64_atomic_load16_u, u16, u64, u64, FORCE_READ_INT)
 DEFINE_ATOMIC_LOAD(i64_atomic_load32_u, u32, u64, u64, FORCE_READ_INT)
 
-#define DEFINE_ATOMIC_STORE(name, t1, t2)                              \
+#define DEFINE_ATOMIC_STORE(name, t1, t2)                                     \
   static inline void name(wasm_rt_memory_t* mem, u64 addr, t2 value) { \
-    MEMCHECK(mem, addr, t1);                                           \
-    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                  \
-    t1 wrapped = (t1)value;                                            \
-    atomic_store_##t1(&mem->data[addr], wrapped);                      \
+    MEMCHECK(mem, addr, t1);                                                  \
+    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                         \
+    t1 wrapped = (t1)value;                                                   \
+    atomic_store_##t1(&mem->data[addr], wrapped);                             \
+  } \
+  static inline void name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t2 value) { \
+    MEMCHECK(mem, addr, t1);                                                  \
+    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                         \
+    t1 wrapped = (t1)value;                                                   \
+    atomic_store_##t1(&mem->data[addr], wrapped);                             \
   }
 
 DEFINE_ATOMIC_STORE(i32_atomic_store, u32, u32)
@@ -162,6 +175,13 @@ DEFINE_ATOMIC_STORE(i64_atomic_store32, u32, u64)
 
 #define DEFINE_ATOMIC_RMW(name, op, t1, t2)                          \
   static inline t2 name(wasm_rt_memory_t* mem, u64 addr, t2 value) { \
+    MEMCHECK(mem, addr, t1);                                         \
+    ATOMIC_ALIGNMENT_CHECK(addr, t1);                                \
+    t1 wrapped = (t1)value;                                          \
+    t1 ret = atomic_##op##_##t1(&mem->data[addr], wrapped);          \
+    return (t2)ret;                                                  \
+  }\
+  static inline t2 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t2 value) { \
     MEMCHECK(mem, addr, t1);                                         \
     ATOMIC_ALIGNMENT_CHECK(addr, t1);                                \
     t1 wrapped = (t1)value;                                          \
@@ -219,6 +239,16 @@ DEFINE_ATOMIC_RMW(i64_atomic_rmw_xchg, exchange, u64, u64)
 
 #define DEFINE_ATOMIC_CMP_XCHG(name, t1, t2)                                   \
   static inline t1 name(wasm_rt_memory_t* mem, u64 addr, t1 expected,          \
+                        t1 replacement) {                                      \
+    MEMCHECK(mem, addr, t2);                                                   \
+    ATOMIC_ALIGNMENT_CHECK(addr, t2);                                          \
+    t2 expected_wrapped = (t2)expected;                                        \
+    t2 replacement_wrapped = (t2)replacement;                                  \
+    t2 old = atomic_compare_exchange_##t2(&mem->data[addr], &expected_wrapped, \
+                                          replacement_wrapped);                \
+    return (t1)old;                                                            \
+  }\
+  static inline t1 name##_shared(wasm_rt_shared_memory_t* mem, u64 addr, t1 expected,          \
                         t1 replacement) {                                      \
     MEMCHECK(mem, addr, t2);                                                   \
     ATOMIC_ALIGNMENT_CHECK(addr, t2);                                          \
