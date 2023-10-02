@@ -422,10 +422,34 @@ if (WABT_INSTALL_RULES)
   )
 endif ()
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads)
+
+add_custom_command(
+  OUTPUT gen-wasm2c-rt-prebuilt
+
+  COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/wasm2c/prebuilt/wasm-rt-mem-impl.c" -D in="${WABT_SOURCE_DIR}/wasm2c/template/wasm-rt-mem-impl.tmpl.c" -D replace="" -P ${WABT_SOURCE_DIR}/scripts/gen-wasm2c-rt-templates.cmake
+  COMMAND ${CMAKE_COMMAND} -D out="${WABT_SOURCE_DIR}/wasm2c/prebuilt/wasm-rt-mem-shared-impl.c" -D in="${WABT_SOURCE_DIR}/wasm2c/template/wasm-rt-mem-impl.tmpl.c" -D replace="_shared" -P ${WABT_SOURCE_DIR}/scripts/gen-wasm2c-rt-templates.cmake
+  COMMAND ${CMAKE_COMMAND} -E touch gen-wasm2c-rt-prebuilt
+
+  DEPENDS ${WABT_SOURCE_DIR}/wasm2c/template/wasm-rt-mem-impl.tmpl.c
+)
+
+add_custom_target(gen-wasm2c-rt-prebuilt-target DEPENDS gen-wasm2c-rt-prebuilt)
+
+set(WASM_RT_TEMPLATE_SRC ${WABT_SOURCE_DIR}/wasm2c/prebuilt/wasm-rt-mem-impl.c)
+
+if (Threads_FOUND)
+  set(WASM_RT_TEMPLATE_SRC ${WASM_RT_TEMPLATE_SRC} ${WABT_SOURCE_DIR}/wasm2c/prebuilt/wasm-rt-mem-shared-impl.c)
+endif ()
+
 if (HAVE_SETJMP_H)
-  set(WASM_RT_FILES "wasm2c/wasm-rt-impl.h" "wasm2c/wasm-rt-impl.c" "wasm2c/wasm-rt-exceptions-impl.c")
+  set(WASM_RT_FILES "wasm2c/wasm-rt-impl.h" "wasm2c/wasm-rt-impl.c" "wasm2c/wasm-rt-exceptions-impl.c" ${WASM_RT_TEMPLATE_SRC})
 
   add_library(wasm-rt-impl STATIC ${WASM_RT_FILES})
+  add_dependencies(wasm-rt-impl gen-wasm2c-rt-prebuilt-target)
+  target_link_libraries(wasm-rt-impl ${CMAKE_THREAD_LIBS_INIT})
+  target_include_directories(wasm-rt-impl PRIVATE ${WABT_SOURCE_DIR}/wasm2c/)
   add_library(wabt::wasm-rt-impl ALIAS wasm-rt-impl)
   if (WABT_BIG_ENDIAN)
     target_compile_definitions(wasm-rt-impl PUBLIC WABT_BIG_ENDIAN=1)
@@ -659,7 +683,6 @@ if (BUILD_TESTS)
     set(WASM2C_CFLAGS "${WASM2C_CFLAGS} $ENV{WASM2C_CFLAGS}")
   endif ()
 
-  set(THREADS_PREFER_PTHREAD_FLAG ON)
   find_package(Threads REQUIRED)
 
   # Python 3.5 is the version shipped in Ubuntu Xenial
