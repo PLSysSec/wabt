@@ -1,4 +1,4 @@
-#if defined(__GNUC__) && defined(__x86_64__)
+#if defined(__GNUC__) && defined(__x86_64__) && !WASM_RT_MEMCHECK_BOUNDS_CHECK
 #define SIMD_FORCE_READ(var) __asm__("" ::"x"(var));
 #else
 #define SIMD_FORCE_READ(var)
