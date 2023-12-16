@@ -77,6 +77,8 @@ extern "C" {
 #define WASM_RT_USE_C11THREADS 1
 #endif
 
+#endif
+
 #ifdef _MSC_VER
 #define WASM_RT_THREAD_LOCAL __declspec(thread)
 #elif defined(WASM_RT_C11_AVAILABLE)

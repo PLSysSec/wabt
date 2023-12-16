@@ -25,7 +25,8 @@
 #define WASM_RT_MEM_OPS_shared
 
 // Shared memory operations are defined only if we have C11
-#if defined(WASM_RT_MEM_OPS) || (defined(WASM_RT_MEM_OPS_shared) && defined(WASM_RT_C11_AVAILABLE))
+#if defined(WASM_RT_MEM_OPS) || \
+    (defined(WASM_RT_MEM_OPS_shared) && defined(WASM_RT_C11_AVAILABLE))
 
 #include <assert.h>
 #include <stdio.h>
@@ -78,6 +79,10 @@
     fprintf(stderr, "Lock release failed\n"); \
     abort();                                  \
   }
+#elif WASM_RT_USE_CRITICALSECTION
+#define MEMORY_LOCK_VAR_INIT(name) InitializeCriticalSection(&(name))
+#define MEMORY_LOCK_AQUIRE(name) EnterCriticalSection(&(name))
+#define MEMORY_LOCK_RELEASE(name) LeaveCriticalSection(&(name))
 #endif
 
 #endif
