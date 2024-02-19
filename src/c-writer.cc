@@ -308,6 +308,7 @@ class CWriter {
 
   void Indent(int size = INDENT_SIZE);
   void Dedent(int size = INDENT_SIZE);
+  void NonIndented(std::function<void()> func);
   void WriteIndent();
   void WriteData(const char* src, size_t size);
   void Writef(const char* format, ...);
@@ -402,6 +403,8 @@ class CWriter {
   void WriteElemInitializerDecls();
   void WriteElemInitializers();
   void WriteElemTableInit(bool, const ElemSegment*, const Table*);
+  void SwapSegueBase(Memory* memory, bool save_old_value);
+  void UndoSwapSegueBase();
   void WriteExports(CWriterPhase);
   void WriteTailCallExports(CWriterPhase);
   void WriteInitDecl();
@@ -1019,6 +1022,13 @@ void CWriter::Indent(int size) {
 void CWriter::Dedent(int size) {
   indent_ -= size;
   assert(indent_ >= 0);
+}
+
+void CWriter::NonIndented(std::function<void()> func) {
+  int copy = indent_;
+  indent_ = 0;
+  func();
+  indent_ = copy;
 }
 
 void CWriter::WriteIndent() {
@@ -2417,6 +2427,27 @@ void CWriter::WriteElemTableInit(bool active_initialization,
   Write(");", Newline());
 }
 
+static bool ShouldUseSegue(const Module* module_) {
+  return module_->memories.size() == 1 && !module_->memories[0]->page_limits.is_shared;
+}
+
+void CWriter::SwapSegueBase(Memory* memory, bool save_old_value) {
+  NonIndented([&] { Write("#if WASM_RT_USE_SEGUE", Newline()); });
+  if (save_old_value) {
+    Write("uintptr_t segue_saved_base = WASM_RT_SEGUE_READ_BASE();", Newline());
+  }
+  auto primary_memory =
+      ExternalInstanceRef(ModuleFieldType::Memory, memory->name);
+  Write("WASM_RT_SEGUE_WRITE_BASE(", primary_memory, ".data);", Newline());
+  NonIndented([&] { Write("#endif", Newline()); });
+}
+
+void CWriter::UndoSwapSegueBase() {
+  NonIndented([&] { Write("#if WASM_RT_USE_SEGUE", Newline()); });
+  Write("WASM_RT_SEGUE_WRITE_BASE(segue_saved_base);", Newline());
+  NonIndented([&] { Write("#endif", Newline()); });
+}
+
 void CWriter::WriteExports(CWriterPhase kind) {
   if (module_->exports.empty())
     return;
@@ -2492,8 +2523,14 @@ void CWriter::WriteExports(CWriterPhase kind) {
     switch (export_->kind) {
       case ExternalKind::Func: {
         Write(OpenBrace());
-        if (func_->GetNumResults() > 0) {
-          Write("return ");
+        if (ShouldUseSegue(module_)) {
+          SwapSegueBase(module_->memories[0], true /* save_old_value */);
+        }
+        auto num_results = func_->GetNumResults();
+        if (num_results > 1) {
+          Write(func_->decl.sig.result_types, " ret = ");
+        } else if (num_results == 1) {
+          Write(func_->GetResultType(0), " ret = ");
         }
         Write(ExternalRef(ModuleFieldType::Func, internal_name), "(");
 
@@ -2505,6 +2542,12 @@ void CWriter::WriteExports(CWriterPhase kind) {
           Write("instance");
         }
         WriteParamSymbols(index_to_name);
+        if (ShouldUseSegue(module_)) {
+          UndoSwapSegueBase();
+        }
+        if (num_results > 0) {
+          Write("return ret;", Newline());
+        }
         Write(CloseBrace(), Newline());
 
         local_sym_map_.clear();
@@ -2603,6 +2646,9 @@ void CWriter::WriteInit() {
   }
   if (!module_->memories.empty()) {
     Write("init_memories(instance);", Newline());
+    if (ShouldUseSegue(module_)) {
+      SwapSegueBase(module_->memories[0], true /* save_old_value */);
+    }
   }
   if (!module_->tables.empty() && !module_->elem_segments.empty()) {
     Write("init_elem_instances(instance);", Newline());
@@ -2622,6 +2668,10 @@ void CWriter::WriteInit() {
       Write("(instance);");
     }
     Write(Newline());
+  }
+
+  if (ShouldUseSegue(module_)) {
+    UndoSwapSegueBase();
   }
   Write(CloseBrace(), Newline());
 }
@@ -3725,6 +3775,9 @@ void CWriter::Write(const ExprList& exprs) {
         Write(StackVar(0), " = ", func, "(",
               ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", ",
               StackVar(0), ");", Newline());
+        if (ShouldUseSegue(module_)) {
+          SwapSegueBase(module_->memories[0], false /* save_old_value */);
+        }
         break;
       }
 
@@ -4970,6 +5023,33 @@ void CWriter::Write(const LoadExpr& expr) {
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
   func = GetMemoryAPIString(*memory, func);
 
+  // Non shared memories in Wasm modules with a single memory use a memory
+  // access function that may offer optimizations
+  if (ShouldUseSegue(module_)) {
+    // clang-format off
+    switch (expr.opcode) {
+      case Opcode::I32Load:
+      case Opcode::I64Load:
+      case Opcode::F32Load:
+      case Opcode::F64Load:
+      case Opcode::I32Load8S:
+      case Opcode::I64Load8S:
+      case Opcode::I32Load8U:
+      case Opcode::I64Load8U:
+      case Opcode::I32Load16S:
+      case Opcode::I64Load16S:
+      case Opcode::I32Load16U:
+      case Opcode::I64Load16U:
+      case Opcode::I64Load32S:
+      case Opcode::I64Load32U:
+        func += "_single_memory";
+        break;
+      default:
+        break;
+    }
+    // clang-format on
+  }
+
   Type result_type = expr.opcode.GetResultType();
   Write(StackVar(0, result_type), " = ", func, "(",
         ExternalInstancePtr(ModuleFieldType::Memory, memory->name), ", (u64)(",
@@ -5003,6 +5083,28 @@ void CWriter::Write(const StoreExpr& expr) {
 
   Memory* memory = module_->memories[module_->GetMemoryIndex(expr.memidx)];
   func = GetMemoryAPIString(*memory, func);
+
+  // Non shared memories in Wasm modules with a single memory use a memory
+  // access function that may offer optimizations
+  if (ShouldUseSegue(module_)) {
+    // clang-format off
+    switch (expr.opcode) {
+      case Opcode::I32Store:
+      case Opcode::I64Store:
+      case Opcode::F32Store:
+      case Opcode::F64Store:
+      case Opcode::I32Store8:
+      case Opcode::I64Store8:
+      case Opcode::I32Store16:
+      case Opcode::I64Store16:
+      case Opcode::I64Store32:
+        func += "_single_memory";
+        break;
+      default:
+        break;
+    }
+    // clang-format on
+  }
 
   Write(func, "(", ExternalInstancePtr(ModuleFieldType::Memory, memory->name),
         ", (u64)(", StackVar(1), ")");

@@ -281,6 +281,173 @@ R"w2c_template(DEFINE_STORE(i64_store16, u16, u64)
 R"w2c_template(DEFINE_STORE(i64_store32, u32, u64)
 )w2c_template"
 R"w2c_template(
+// Memory functions that maybe optimized for Wasm modules with a single memory
+)w2c_template"
+R"w2c_template(// (imported or internal). Currently these functions may use the segue
+)w2c_template"
+R"w2c_template(// optimization if allowed. The segue optimization uses x86 segments to point to
+)w2c_template"
+R"w2c_template(// a linear memory. We use this optimization when on x86_64 if the compiler
+)w2c_template"
+R"w2c_template(// supports intrinsics for (rd|wr)(fs|gs)base, supports "address namespaces" for
+)w2c_template"
+R"w2c_template(// accessing pointers and supports memcpy on pointers with custom "address
+)w2c_template"
+R"w2c_template(// namespaces". GCC does not support the memcpy requirement, so this leaves only
+)w2c_template"
+R"w2c_template(// clang for now.
+)w2c_template"
+R"w2c_template(#if WASM_RT_ALLOW_SEGUE && (defined(__x86_64__) || defined(_M_X64)) && __clang__
+)w2c_template"
+R"w2c_template(// Test for just one of the segment functions for simplicity
+)w2c_template"
+R"w2c_template(#if __has_builtin(__builtin_ia32_wrgsbase64)
+)w2c_template"
+R"w2c_template(#define WASM_RT_USE_SEGUE 1
+)w2c_template"
+R"w2c_template(#endif
+)w2c_template"
+R"w2c_template(#endif
+)w2c_template"
+R"w2c_template(
+#ifndef WASM_RT_USE_SEGUE
+)w2c_template"
+R"w2c_template(#define WASM_RT_USE_SEGUE 0
+)w2c_template"
+R"w2c_template(#endif
+)w2c_template"
+R"w2c_template(
+#if WASM_RT_USE_SEGUE
+)w2c_template"
+R"w2c_template(// Different segments are free on different platforms
+)w2c_template"
+R"w2c_template(// Windows uses GS for TLS, FS is free
+)w2c_template"
+R"w2c_template(// Linux uses FS for TLS, GS is free
+)w2c_template"
+R"w2c_template(#if defined(__WIN32)
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_READ_BASE() __builtin_ia32_rdfsbase64()
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_WRITE_BASE(base) \
+)w2c_template"
+R"w2c_template(  __builtin_ia32_wrfsbase64((uintptr_t)base)
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_TYPE __seg_fs
+)w2c_template"
+R"w2c_template(#else
+)w2c_template"
+R"w2c_template(// POSIX style OS
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_READ_BASE() __builtin_ia32_rdgsbase64()
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_WRITE_BASE(base) \
+)w2c_template"
+R"w2c_template(  __builtin_ia32_wrgsbase64((uintptr_t)base)
+)w2c_template"
+R"w2c_template(#define WASM_RT_SEGUE_TYPE __seg_gs
+)w2c_template"
+R"w2c_template(#endif
+)w2c_template"
+R"w2c_template(
+#define DEFINE_SINGLE_MEMORY_LOAD(name, t1, t2, t3, force_read) \
+)w2c_template"
+R"w2c_template(  static inline t3 name(wasm_rt_memory_t* mem, u64 addr) {      \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                    \
+)w2c_template"
+R"w2c_template(    t1 result;                                                  \
+)w2c_template"
+R"w2c_template(    uint8_t WASM_RT_SEGUE_TYPE* addr_ptr =                      \
+)w2c_template"
+R"w2c_template(        (uint8_t WASM_RT_SEGUE_TYPE*)(uintptr_t)addr;           \
+)w2c_template"
+R"w2c_template(    wasm_rt_memcpy(&result, addr_ptr, sizeof(t1));              \
+)w2c_template"
+R"w2c_template(    force_read(result);                                         \
+)w2c_template"
+R"w2c_template(    return (t3)(t2)result;                                      \
+)w2c_template"
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(
+#define DEFINE_SINGLE_MEMORY_STORE(name, t1, t2)                       \
+)w2c_template"
+R"w2c_template(  static inline void name(wasm_rt_memory_t* mem, u64 addr, t2 value) { \
+)w2c_template"
+R"w2c_template(    MEMCHECK(mem, addr, t1);                                           \
+)w2c_template"
+R"w2c_template(    t1 wrapped = (t1)value;                                            \
+)w2c_template"
+R"w2c_template(    uint8_t WASM_RT_SEGUE_TYPE* addr_ptr =                             \
+)w2c_template"
+R"w2c_template(        (uint8_t WASM_RT_SEGUE_TYPE*)(uintptr_t)addr;                  \
+)w2c_template"
+R"w2c_template(    wasm_rt_memcpy(addr_ptr, &wrapped, sizeof(t1));                    \
+)w2c_template"
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(
+#else
+)w2c_template"
+R"w2c_template(#define DEFINE_SINGLE_MEMORY_LOAD DEFINE_LOAD
+)w2c_template"
+R"w2c_template(#define DEFINE_SINGLE_MEMORY_STORE DEFINE_STORE
+)w2c_template"
+R"w2c_template(#endif
+)w2c_template"
+R"w2c_template(
+// clang-format off
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i32_load_single_memory, u32, u32, u32, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load_single_memory, u64, u64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(f32_load_single_memory, f32, f32, f32, FORCE_READ_FLOAT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(f64_load_single_memory, f64, f64, f64, FORCE_READ_FLOAT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i32_load8_s_single_memory, s8, s32, u32, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load8_s_single_memory, s8, s64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i32_load8_u_single_memory, u8, u32, u32, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load8_u_single_memory, u8, u64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i32_load16_s_single_memory, s16, s32, u32, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load16_s_single_memory, s16, s64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i32_load16_u_single_memory, u16, u32, u32, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load16_u_single_memory, u16, u64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load32_s_single_memory, s32, s64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_LOAD(i64_load32_u_single_memory, u32, u64, u64, FORCE_READ_INT)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i32_store_single_memory, u32, u32)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i64_store_single_memory, u64, u64)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(f32_store_single_memory, f32, f32)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(f64_store_single_memory, f64, f64)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i32_store8_single_memory, u8, u32)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i32_store16_single_memory, u16, u32)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i64_store8_single_memory, u8, u64)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i64_store16_single_memory, u16, u64)
+)w2c_template"
+R"w2c_template(DEFINE_SINGLE_MEMORY_STORE(i64_store32_single_memory, u32, u64)
+)w2c_template"
+R"w2c_template(// clang-format on
+)w2c_template"
+R"w2c_template(
 #if defined(_MSC_VER)
 )w2c_template"
 R"w2c_template(

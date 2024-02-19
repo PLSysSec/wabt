@@ -196,6 +196,10 @@ extern "C" {
 #define WASM_RT_INSTALL_SIGNAL_HANDLER 0
 #endif
 
+#ifndef WASM_RT_ALLOW_SEGUE
+#define WASM_RT_ALLOW_SEGUE 0
+#endif
+
 /**
  * This macro, if defined, allows the embedder to disable all stack exhaustion
  * checks. This a non conformant configuration, i.e., this does not respect
