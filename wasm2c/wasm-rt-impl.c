@@ -49,6 +49,11 @@ static void* g_sig_handler_handle = 0;
 #endif
 #endif
 
+#if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
+#include <sys/auxv.h>
+bool wasm_rt_fsgsbase_inst_supported = false;
+#endif
+
 #if WASM_RT_STACK_DEPTH_COUNT
 WASM_RT_THREAD_LOCAL uint32_t wasm_rt_call_stack_depth;
 WASM_RT_THREAD_LOCAL uint32_t wasm_rt_saved_call_stack_depth;
@@ -219,6 +224,13 @@ void wasm_rt_init(void) {
     g_signal_handler_installed = true;
     os_install_signal_handler();
   }
+#endif
+#if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
+  // Check for support for userspace wrgsbase instructions
+#define HWCAP2_FSGSBASE (1 << 1)
+  unsigned long val = getauxval(AT_HWCAP2);
+  wasm_rt_fsgsbase_inst_supported = val & HWCAP2_FSGSBASE;
+#undef HWCAP2_FSGSBASE
 #endif
   assert(wasm_rt_is_initialized());
 }

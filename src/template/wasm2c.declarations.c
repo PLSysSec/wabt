@@ -45,9 +45,33 @@
 
 #if WASM_RT_USE_SEGUE
 // POSIX uses FS for TLS, GS is free
-#define WASM_RT_SEGUE_READ_BASE() __builtin_ia32_rdgsbase64()
-#define WASM_RT_SEGUE_WRITE_BASE(base) \
-  __builtin_ia32_wrgsbase64((uintptr_t)base)
+#include <asm/prctl.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+static inline void* wasm_rt_segue_read_base() {
+  if (wasm_rt_fsgsbase_inst_supported) {
+    return (void*)__builtin_ia32_rdgsbase64();
+  } else {
+    void* base;
+    if (syscall(SYS_arch_prctl, ARCH_GET_GS, &base) != 0) {
+      perror("Syscall SYS_arch_prctl error");
+      abort();
+    }
+    return base;
+  }
+}
+static inline void wasm_rt_segue_write_base(void* base) {
+  if (wasm_rt_fsgsbase_inst_supported) {
+    __builtin_ia32_wrgsbase64((uintptr_t)base);
+  } else {
+    if (syscall(SYS_arch_prctl, ARCH_SET_GS, (uintptr_t)base) != 0) {
+      perror("Syscall SYS_arch_prctl error");
+      abort();
+    }
+  }
+}
 #define MEM_ADDR_MEMOP(mem, addr, n) ((uint8_t __seg_gs*)(uintptr_t)addr)
 #else
 #define MEM_ADDR_MEMOP(mem, addr, n) MEM_ADDR(mem, addr, n)
@@ -103,7 +127,7 @@ static inline bool func_types_eq(const wasm_rt_func_type_t a,
 #if WASM_RT_USE_SEGUE && WASM_RT_SANITY_CHECKS
 #include <stdio.h>
 #define WASM_RT_CHECK_BASE(mem)                                               \
-  if (((uintptr_t)((mem)->data)) != ((uintptr_t)WASM_RT_SEGUE_READ_BASE())) { \
+  if (((uintptr_t)((mem)->data)) != ((uintptr_t)wasm_rt_segue_read_base())) { \
     puts("Segment register mismatch\n");                                      \
     abort();                                                                  \
   }

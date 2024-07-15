@@ -89,11 +89,58 @@ R"w2c_template(
 )w2c_template"
 R"w2c_template(// POSIX uses FS for TLS, GS is free
 )w2c_template"
-R"w2c_template(#define WASM_RT_SEGUE_READ_BASE() __builtin_ia32_rdgsbase64()
+R"w2c_template(#include <asm/prctl.h>
 )w2c_template"
-R"w2c_template(#define WASM_RT_SEGUE_WRITE_BASE(base) \
+R"w2c_template(#include <stdio.h>
 )w2c_template"
-R"w2c_template(  __builtin_ia32_wrgsbase64((uintptr_t)base)
+R"w2c_template(#include <sys/syscall.h>
+)w2c_template"
+R"w2c_template(#include <unistd.h>
+)w2c_template"
+R"w2c_template(
+static inline void* wasm_rt_segue_read_base() {
+)w2c_template"
+R"w2c_template(  if (wasm_rt_fsgsbase_inst_supported) {
+)w2c_template"
+R"w2c_template(    return (void*)__builtin_ia32_rdgsbase64();
+)w2c_template"
+R"w2c_template(  } else {
+)w2c_template"
+R"w2c_template(    void* base;
+)w2c_template"
+R"w2c_template(    if (syscall(SYS_arch_prctl, ARCH_GET_GS, &base) != 0) {
+)w2c_template"
+R"w2c_template(      perror("Syscall SYS_arch_prctl error");
+)w2c_template"
+R"w2c_template(      abort();
+)w2c_template"
+R"w2c_template(    }
+)w2c_template"
+R"w2c_template(    return base;
+)w2c_template"
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(}
+)w2c_template"
+R"w2c_template(static inline void wasm_rt_segue_write_base(void* base) {
+)w2c_template"
+R"w2c_template(  if (wasm_rt_fsgsbase_inst_supported) {
+)w2c_template"
+R"w2c_template(    __builtin_ia32_wrgsbase64((uintptr_t)base);
+)w2c_template"
+R"w2c_template(  } else {
+)w2c_template"
+R"w2c_template(    if (syscall(SYS_arch_prctl, ARCH_SET_GS, (uintptr_t)base) != 0) {
+)w2c_template"
+R"w2c_template(      perror("Syscall SYS_arch_prctl error");
+)w2c_template"
+R"w2c_template(      abort();
+)w2c_template"
+R"w2c_template(    }
+)w2c_template"
+R"w2c_template(  }
+)w2c_template"
+R"w2c_template(}
 )w2c_template"
 R"w2c_template(#define MEM_ADDR_MEMOP(mem, addr, n) ((uint8_t __seg_gs*)(uintptr_t)addr)
 )w2c_template"
@@ -194,7 +241,7 @@ R"w2c_template(#include <stdio.h>
 )w2c_template"
 R"w2c_template(#define WASM_RT_CHECK_BASE(mem)                                               \
 )w2c_template"
-R"w2c_template(  if (((uintptr_t)((mem)->data)) != ((uintptr_t)WASM_RT_SEGUE_READ_BASE())) { \
+R"w2c_template(  if (((uintptr_t)((mem)->data)) != ((uintptr_t)wasm_rt_segue_read_base())) { \
 )w2c_template"
 R"w2c_template(    puts("Segment register mismatch\n");                                      \
 )w2c_template"
