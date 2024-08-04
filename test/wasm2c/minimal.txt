@@ -106,31 +106,18 @@ wasm_rt_func_type_t wasm2c_test_get_func_type(uint32_t param_count, uint32_t res
 
 #if WASM_RT_USE_SEGUE
 // POSIX uses FS for TLS, GS is free
-#include <asm/prctl.h>
-#include <stdio.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
 static inline void* wasm_rt_segue_read_base() {
   if (wasm_rt_fsgsbase_inst_supported) {
     return (void*)__builtin_ia32_rdgsbase64();
   } else {
-    void* base;
-    if (syscall(SYS_arch_prctl, ARCH_GET_GS, &base) != 0) {
-      perror("Syscall SYS_arch_prctl error");
-      abort();
-    }
-    return base;
+    return wasm_rt_syscall_get_segue_base();
   }
 }
 static inline void wasm_rt_segue_write_base(void* base) {
   if (wasm_rt_fsgsbase_inst_supported) {
     __builtin_ia32_wrgsbase64((uintptr_t)base);
   } else {
-    if (syscall(SYS_arch_prctl, ARCH_SET_GS, (uintptr_t)base) != 0) {
-      perror("Syscall SYS_arch_prctl error");
-      abort();
-    }
+    wasm_rt_syscall_set_segue_base(base);
   }
 }
 #define MEM_ADDR_MEMOP(mem, addr, n) ((uint8_t __seg_gs*)(uintptr_t)addr)

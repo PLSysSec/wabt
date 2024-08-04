@@ -52,6 +52,41 @@ static void* g_sig_handler_handle = 0;
 #if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
 #include <sys/auxv.h>
 bool wasm_rt_fsgsbase_inst_supported = false;
+
+#ifdef __linux__
+
+// https://www.man7.org/linux/man-pages/man2/arch_prctl.2.html
+#include <asm/prctl.h>    // For ARCH_SET_GS
+#include <sys/syscall.h>  // For SYS_arch_prctl
+#include <unistd.h>       // For syscall
+#define SYSCALL_GET_GS(base_ptr) syscall(SYS_arch_prctl, ARCH_GET_GS, base_ptr)
+#define SYSCALL_SET_GS(base) syscall(SYS_arch_prctl, ARCH_SET_GS, base)
+
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+
+// https://github.com/freebsd/freebsd-src/blob/d6fb9f8ca344bfe47fc79d3ae81112a8bc036307/sys/x86/include/sysarch.h#L142
+// https://github.com/DragonFlyBSD/DragonFlyBSD/blob/8506772f4f44fcae9c78e61800e54be0399905f8/sys/cpu/x86_64/include/sysarch.h#L52
+#include <machine/sysarch.h>
+#define SYSCALL_GET_GS(base_ptr) amd64_get_gsbase(base_ptr);
+#define SYSCALL_SET_GS(base) amd64_set_gsbase(base);
+
+#elif defined(__NetBSD__)
+
+// https://github.com/NetBSD/src/blob/ce716eeb9a02c7ecc82ab81d906a970d97432925/sys/arch/x86/include/sysarch.h#L82
+#include <machine/sysarch.h>
+#define SYSCALL_GET_GS(base_ptr) sysarch(X86_64_SET_GSBASE, base_ptr);
+#define SYSCALL_SET_GS(base) sysarch(X86_64_SET_GSBASE, base);
+
+#elif defined(__OpenBSD__)
+
+// No system call available
+// https://github.com/openbsd/src/blob/493aa139460d27930d60a92380691ef4e2dde0bd/sys/arch/amd64/include/sysarch.h#L1
+#error "Segue not supported on this OS"
+
+#else
+#error "Unknown OS"
+#endif
+
 #endif
 
 #if WASM_RT_STACK_DEPTH_COUNT
@@ -268,6 +303,23 @@ void wasm_rt_free_thread(void) {
   os_disable_and_deallocate_altstack();
 #endif
 }
+
+#if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
+void wasm_rt_syscall_set_segue_base(void* base) {
+  if (SYSCALL_SET_GS(base) != 0) {
+    perror("wasm_rt_syscall_set_segue_base error");
+    abort();
+  }
+}
+void* wasm_rt_syscall_get_segue_base() {
+  void* base;
+  if (SYSCALL_GET_GS(&base) != 0) {
+    perror("wasm_rt_syscall_get_segue_base error");
+    abort();
+  }
+  return base;
+}
+#endif
 
 // Include table operations for funcref
 #define WASM_RT_TABLE_OPS_FUNCREF

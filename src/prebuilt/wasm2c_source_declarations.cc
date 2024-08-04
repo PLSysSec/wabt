@@ -89,16 +89,7 @@ R"w2c_template(
 )w2c_template"
 R"w2c_template(// POSIX uses FS for TLS, GS is free
 )w2c_template"
-R"w2c_template(#include <asm/prctl.h>
-)w2c_template"
-R"w2c_template(#include <stdio.h>
-)w2c_template"
-R"w2c_template(#include <sys/syscall.h>
-)w2c_template"
-R"w2c_template(#include <unistd.h>
-)w2c_template"
-R"w2c_template(
-static inline void* wasm_rt_segue_read_base() {
+R"w2c_template(static inline void* wasm_rt_segue_read_base() {
 )w2c_template"
 R"w2c_template(  if (wasm_rt_fsgsbase_inst_supported) {
 )w2c_template"
@@ -106,17 +97,7 @@ R"w2c_template(    return (void*)__builtin_ia32_rdgsbase64();
 )w2c_template"
 R"w2c_template(  } else {
 )w2c_template"
-R"w2c_template(    void* base;
-)w2c_template"
-R"w2c_template(    if (syscall(SYS_arch_prctl, ARCH_GET_GS, &base) != 0) {
-)w2c_template"
-R"w2c_template(      perror("Syscall SYS_arch_prctl error");
-)w2c_template"
-R"w2c_template(      abort();
-)w2c_template"
-R"w2c_template(    }
-)w2c_template"
-R"w2c_template(    return base;
+R"w2c_template(    return wasm_rt_syscall_get_segue_base();
 )w2c_template"
 R"w2c_template(  }
 )w2c_template"
@@ -130,13 +111,7 @@ R"w2c_template(    __builtin_ia32_wrgsbase64((uintptr_t)base);
 )w2c_template"
 R"w2c_template(  } else {
 )w2c_template"
-R"w2c_template(    if (syscall(SYS_arch_prctl, ARCH_SET_GS, (uintptr_t)base) != 0) {
-)w2c_template"
-R"w2c_template(      perror("Syscall SYS_arch_prctl error");
-)w2c_template"
-R"w2c_template(      abort();
-)w2c_template"
-R"w2c_template(    }
+R"w2c_template(    wasm_rt_syscall_set_segue_base(base);
 )w2c_template"
 R"w2c_template(  }
 )w2c_template"

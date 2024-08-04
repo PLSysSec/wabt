@@ -304,6 +304,16 @@ extern WASM_RT_THREAD_LOCAL uint32_t wasm_rt_call_stack_depth;
  * this variable.
  */
 extern bool wasm_rt_fsgsbase_inst_supported;
+/**
+ * If fast userspace wrgsbase instructions don't exist, the runtime most provide
+ * a function that invokes the OS' underlying syscall to set the segment base.
+ */
+void wasm_rt_syscall_set_segue_base(void* base);
+/**
+ * If fast userspace rdgsbase instructions don't exist, the runtime most provide
+ * a function that invokes the OS' underlying syscall to get the segment base.
+ */
+void* wasm_rt_syscall_get_segue_base();
 #endif
 
 #if defined(_MSC_VER)
