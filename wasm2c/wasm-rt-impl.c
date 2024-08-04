@@ -51,6 +51,9 @@ static void* g_sig_handler_handle = 0;
 
 #if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
 #include <sys/auxv.h>
+#ifdef __GLIBC__
+#include <gnu/libc-version.h>
+#endif
 bool wasm_rt_fsgsbase_inst_supported = false;
 
 #ifdef __linux__
@@ -67,15 +70,15 @@ bool wasm_rt_fsgsbase_inst_supported = false;
 // https://github.com/freebsd/freebsd-src/blob/d6fb9f8ca344bfe47fc79d3ae81112a8bc036307/sys/x86/include/sysarch.h#L142
 // https://github.com/DragonFlyBSD/DragonFlyBSD/blob/8506772f4f44fcae9c78e61800e54be0399905f8/sys/cpu/x86_64/include/sysarch.h#L52
 #include <machine/sysarch.h>
-#define SYSCALL_GET_GS(base_ptr) amd64_get_gsbase(base_ptr);
-#define SYSCALL_SET_GS(base) amd64_set_gsbase(base);
+#define SYSCALL_GET_GS(base_ptr) amd64_get_gsbase(base_ptr)
+#define SYSCALL_SET_GS(base) amd64_set_gsbase(base)
 
 #elif defined(__NetBSD__)
 
 // https://github.com/NetBSD/src/blob/ce716eeb9a02c7ecc82ab81d906a970d97432925/sys/arch/x86/include/sysarch.h#L82
 #include <machine/sysarch.h>
-#define SYSCALL_GET_GS(base_ptr) sysarch(X86_64_SET_GSBASE, base_ptr);
-#define SYSCALL_SET_GS(base) sysarch(X86_64_SET_GSBASE, base);
+#define SYSCALL_GET_GS(base_ptr) sysarch(X86_64_SET_GSBASE, base_ptr)
+#define SYSCALL_SET_GS(base) sysarch(X86_64_SET_GSBASE, base)
 
 #elif defined(__OpenBSD__)
 
@@ -260,13 +263,20 @@ void wasm_rt_init(void) {
     os_install_signal_handler();
   }
 #endif
+
 #if WASM_RT_USE_SEGUE || WASM_RT_ALLOW_SEGUE
+#if defined(__GLIBC__) && __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 18
   // Check for support for userspace wrgsbase instructions
-#define HWCAP2_FSGSBASE (1 << 1)
   unsigned long val = getauxval(AT_HWCAP2);
-  wasm_rt_fsgsbase_inst_supported = val & HWCAP2_FSGSBASE;
-#undef HWCAP2_FSGSBASE
+  wasm_rt_fsgsbase_inst_supported = val & (1 << 1);
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+  unsigned long val = 0;
+  if (elf_aux_info(AT_HWCAP2, &val, sizeof(unsigned long)) == 0) {
+    wasm_rt_fsgsbase_inst_supported = val & (1 << 1);
+  }
 #endif
+#endif
+
   assert(wasm_rt_is_initialized());
 }
 
