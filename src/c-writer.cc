@@ -6107,6 +6107,7 @@ void CWriter::WriteCHeader() {
   Write("#ifndef ", guard, Newline());
   Write("#define ", guard, Newline());
   Write(Newline());
+  Write("#define CURR_WASM2C_MODULE_NAME ", module_prefix_, Newline(), Newline());
   ComputeSimdScope();
   WriteHeaderIncludes();
   Write(s_header_top);
