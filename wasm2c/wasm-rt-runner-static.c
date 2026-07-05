@@ -33,7 +33,7 @@ int main(int argc, const char** argv) {
   struct w2c_wasi__snapshot__preview1 wasi = {0};
   uvwasi_t uvwasi = {0};
   uvwasi_options_t init_options = {0};
-  uvwasi_preopen_t preopens[3] = {0};
+  uvwasi_preopen_t preopens[2] = {0};
 
   init_options.in = 0;
   init_options.out = 1;
@@ -46,12 +46,10 @@ int main(int argc, const char** argv) {
   init_options.envp = (const char**)environ;
 
   preopens[0].mapped_path = "/";
-  preopens[0].real_path = "/";
+  preopens[0].real_path = ".";
   preopens[1].mapped_path = "/tmp";
   preopens[1].real_path = "/tmp";
-  preopens[2].mapped_path = ".";
-  preopens[2].real_path = ".";
-  init_options.preopenc = 3;
+  init_options.preopenc = 2;
   init_options.preopens = preopens;
   init_options.allocator = NULL;
 
