@@ -15,6 +15,7 @@
  */
 
 #include "wasm-rt-uvwasi-adapter.h"
+#include "wasi_serdes.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -384,13 +385,12 @@ u32 w2c_wasi__snapshot__preview1_fd_seek(
     u32 whence,
     u32 pos) {
   uvwasi_filesize_t uvpos;
-  if (offset > (u64)INT64_MAX) {
-    return UVWASI_EINVAL;
-  }
 
-  uvwasi_filedelta_t uv_offset = (uvwasi_filedelta_t)offset;
-  uvwasi_errno_t ret =
-      uvwasi_fd_seek(wasi->uvwasi, fd, uv_offset, whence, &uvpos);
+  /* offset is a WASI filedelta -- the only signed 64-bit type in preview1 */
+  uvwasi_filedelta_t delta;
+  memcpy(&delta, &offset, sizeof(delta));
+
+  uvwasi_errno_t ret = uvwasi_fd_seek(wasi->uvwasi, fd, delta, whence, &uvpos);
   if (ret == UVWASI_ESUCCESS) {
     store_u64(wasi, pos, uvpos);
   }
@@ -768,17 +768,30 @@ u32 w2c_wasi__snapshot__preview1_fd_pread(
   return ret;
 }
 
+/* Assert that guest record size matches uvwasi struct sizes so that any
+   divergence is a build failure. */
+_Static_assert(sizeof(uvwasi_subscription_t) ==
+                   UVWASI_SERDES_SIZE_subscription_t,
+               "uvwasi_subscription_t layout != WASI wire format; poll_oneoff "
+               "needs a field-by-field marshal");
+_Static_assert(sizeof(uvwasi_event_t) == UVWASI_SERDES_SIZE_event_t,
+               "uvwasi_event_t layout != WASI wire format; poll_oneoff needs a "
+               "field-by-field marshal");
 u32 w2c_wasi__snapshot__preview1_poll_oneoff(
     struct w2c_wasi__snapshot__preview1* wasi,
     u32 in,
     u32 out,
     u32 nsubscriptions,
     u32 nevents) {
+  if (nsubscriptions == 0) {
+    return UVWASI_EINVAL;
+  }
+
   uvwasi_size_t uvnevents;
   void* in_ptr = mem_get_checked_pointer(
-      wasi, in, (u64)nsubscriptions * sizeof(uvwasi_subscription_t));
+      wasi, in, (u64)nsubscriptions * UVWASI_SERDES_SIZE_subscription_t);
   void* out_ptr = mem_get_checked_pointer(
-      wasi, out, (u64)nsubscriptions * sizeof(uvwasi_event_t));
+      wasi, out, (u64)nsubscriptions * UVWASI_SERDES_SIZE_event_t);
   uvwasi_errno_t ret = uvwasi_poll_oneoff(wasi->uvwasi, in_ptr, out_ptr,
                                           nsubscriptions, &uvnevents);
   if (ret == UVWASI_ESUCCESS) {
