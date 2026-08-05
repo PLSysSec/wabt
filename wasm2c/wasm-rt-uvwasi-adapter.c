@@ -384,13 +384,12 @@ u32 w2c_wasi__snapshot__preview1_fd_seek(
     u32 whence,
     u32 pos) {
   uvwasi_filesize_t uvpos;
-  if (offset > (u64)INT64_MAX) {
-    return UVWASI_EINVAL;
-  }
 
-  uvwasi_filedelta_t uv_offset = (uvwasi_filedelta_t)offset;
-  uvwasi_errno_t ret =
-      uvwasi_fd_seek(wasi->uvwasi, fd, uv_offset, whence, &uvpos);
+  /* offset is a WASI filedelta -- the only signed 64-bit type in preview1 */
+  uvwasi_filedelta_t delta;
+  memcpy(&delta, &offset, sizeof(delta));
+
+  uvwasi_errno_t ret = uvwasi_fd_seek(wasi->uvwasi, fd, delta, whence, &uvpos);
   if (ret == UVWASI_ESUCCESS) {
     store_u64(wasi, pos, uvpos);
   }
